@@ -42,3 +42,17 @@ def test_resource_api_creates_transitions_and_reads_relation(tmp_path, monkeypat
     relations = client.get(f"/api/v1/resources/{source.json()['id']}/relations?direction=outgoing")
     assert relations.status_code == 200
     assert relations.json()["relations"][0]["to_resource_id"] == resource_id
+
+
+def test_operator_cannot_modify_resources(tmp_path, monkeypatch):
+    monkeypatch.setenv("ONTOLOGYOPS_METADATA_PATH", str(tmp_path / "metadata.db"))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/resources",
+        json={"resource_type": "source_asset", "display_name": "受限文件", "metadata": {}},
+        headers={"X-Demo-Role": "operator"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"
