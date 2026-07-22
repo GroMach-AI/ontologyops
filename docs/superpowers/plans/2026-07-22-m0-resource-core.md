@@ -102,7 +102,7 @@ def test_schema_creates_resource_and_relation_tables(tmp_path):
 
 - [ ] **Step 2: 在 `backend/` 目录执行失败测试**
 
-Run: `../.venv/bin/python -m pytest tests/test_resource_registry.py::test_schema_creates_resource_and_relation_tables -v`
+Run: `../../../.venv/bin/python -m pytest tests/test_resource_registry.py::test_schema_creates_resource_and_relation_tables -v`
 
 Expected: FAIL，原因是资源表尚不存在。
 
@@ -127,7 +127,7 @@ class ResourceRecord(Base):
 
 - [ ] **Step 4: 运行 schema 测试**
 
-Run: `../.venv/bin/python -m pytest tests/test_resource_registry.py::test_schema_creates_resource_and_relation_tables -v`
+Run: `../../../.venv/bin/python -m pytest tests/test_resource_registry.py::test_schema_creates_resource_and_relation_tables -v`
 
 Expected: PASS。
 
@@ -165,7 +165,7 @@ def test_unknown_resource_type_cannot_transition():
 
 - [ ] **Step 2: 验证失败**
 
-Run: `../.venv/bin/python -m pytest tests/test_resource_lifecycle.py -v`
+Run: `../../../.venv/bin/python -m pytest tests/test_resource_lifecycle.py -v`
 
 Expected: FAIL，原因是 `resource_lifecycle` 模块不存在。
 
@@ -194,7 +194,7 @@ def test_registry_records_relation_and_audit(tmp_path):
     assert registry.get_relations(source.id, "outgoing")[0].to_resource_id == dataset.id
 ```
 
-Run: `../.venv/bin/python -m pytest tests/test_resource_lifecycle.py tests/test_resource_registry.py -v`
+Run: `../../../.venv/bin/python -m pytest tests/test_resource_lifecycle.py tests/test_resource_registry.py -v`
 
 Expected: PASS。
 
@@ -233,7 +233,7 @@ def test_resource_transition_writes_chained_audit_event(tmp_path):
 
 - [ ] **Step 2: 验证失败**
 
-Run: `../.venv/bin/python -m pytest tests/test_resource_registry.py::test_resource_transition_writes_chained_audit_event -v`
+Run: `../../../.venv/bin/python -m pytest tests/test_resource_registry.py::test_resource_transition_writes_chained_audit_event -v`
 
 Expected: FAIL，原因是审计记录缺少 M0 字段。
 
@@ -251,7 +251,7 @@ def write_audit_event(..., resource_id: str | None = None, correlation_id: str |
 
 - [ ] **Step 4: 运行资源测试**
 
-Run: `../.venv/bin/python -m pytest tests/test_resource_lifecycle.py tests/test_resource_registry.py -v`
+Run: `../../../.venv/bin/python -m pytest tests/test_resource_lifecycle.py tests/test_resource_registry.py -v`
 
 Expected: PASS。
 
@@ -290,7 +290,7 @@ def test_resource_api_creates_transitions_and_reads_relation(client):
 
 - [ ] **Step 2: 验证失败**
 
-Run: `../.venv/bin/python -m pytest tests/test_resources_api.py -v`
+Run: `../../../.venv/bin/python -m pytest tests/test_resources_api.py -v`
 
 Expected: FAIL，原因是 `/api/v1/resources` 未注册。
 
@@ -300,7 +300,7 @@ Expected: FAIL，原因是 `/api/v1/resources` 未注册。
 
 - [ ] **Step 4: 运行 API 和全量后端测试**
 
-Run: `../.venv/bin/python -m pytest tests/test_resources_api.py tests/test_resource_lifecycle.py tests/test_resource_registry.py -v && ../.venv/bin/python -m pytest tests -q`
+Run: `../../../.venv/bin/python -m pytest tests/test_resources_api.py tests/test_resource_lifecycle.py tests/test_resource_registry.py -v && ../../../.venv/bin/python -m pytest tests -q`
 
 Expected: 新测试和既有 25 项测试均 PASS。
 
@@ -330,7 +330,7 @@ git push origin dev
 
 - [ ] **Step 2: 运行最终验证**
 
-Run: `../.venv/bin/python -m pytest tests -q && cd ../../frontend && npm test -- --run && npm run lint && npm run build`
+Run: `../../../.venv/bin/python -m pytest tests -q && cd ../frontend && npm test -- --run && npm run lint && npm run build`
 
 Expected: 后端全绿；前端既有测试、类型检查和构建均通过。
 
