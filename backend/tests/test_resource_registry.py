@@ -24,3 +24,16 @@ def test_registry_records_relation_and_audit(tmp_path):
     assert source.lifecycle_status == "registered"
     assert relation.from_resource_id == source.id
     assert registry.get_relations(source.id, "outgoing")[0].to_resource_id == dataset.id
+
+
+def test_resource_transition_writes_chained_audit_event(tmp_path):
+    registry = ResourceRegistry(create_engine_and_schema(tmp_path / "metadata.db"))
+    resource = registry.create_resource("dataset_version", "供应商 v1", "modeler")
+
+    registry.transition_resource(resource.id, "profiled", "modeler", correlation_id="run-01")
+
+    event = registry.list_audit_events(resource.id)[-1]
+    assert event.resource_id == resource.id
+    assert event.correlation_id == "run-01"
+    assert event.outcome == "succeeded"
+    assert event.previous_hash
