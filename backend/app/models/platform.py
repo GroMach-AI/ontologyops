@@ -75,6 +75,10 @@ class AuditEvent(Base):
     actor: Mapped[str] = mapped_column(String(64), nullable=False)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    previous_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
