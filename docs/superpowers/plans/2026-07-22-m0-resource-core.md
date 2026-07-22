@@ -180,7 +180,7 @@ def assert_transition(resource_type: str, source: str, target: str) -> None:
         raise InvalidLifecycleTransition(resource_type, source, target)
 ```
 
-`ResourceRegistry.create_resource()` 固定生成 UUID、初始状态 `registered`、version `1`；`transition_resource()` 先读资源、调用 `assert_transition()`，成功后更新状态并写审计；`add_relation()` 先确认两端存在，拒绝自指关系，后写 relation 和审计。
+`ResourceRegistry.create_resource()` 固定生成 UUID、version `1`；除 `ontology_draft` 初始为 `editing` 外，其余 M0 类型初始状态为 `registered`。`transition_resource()` 先读资源、调用 `assert_transition()`，成功后更新状态并写审计；`add_relation()` 先确认两端存在，拒绝自指关系，后写 relation 和审计。
 
 - [ ] **Step 4: 添加服务集成测试并运行**
 
