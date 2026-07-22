@@ -7,6 +7,7 @@ from sqlalchemy import Engine, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.resource_lifecycle import assert_transition
+from app.models.platform import AuditEvent
 from app.models.resources import ResourceRecord, ResourceRelationRecord
 from app.services.audit import write_audit_event
 
@@ -52,10 +53,18 @@ class ResourceRegistry:
             event_type="resource_created",
             resource_type=resource_type,
             payload={"resource_id": resource.id, "display_name": display_name},
+            resource_id=resource.id,
         )
         return resource
 
-    def transition_resource(self, resource_id: str, target_status: str, actor: str) -> ResourceRecord:
+    def transition_resource(
+        self,
+        resource_id: str,
+        target_status: str,
+        actor: str,
+        *,
+        correlation_id: str | None = None,
+    ) -> ResourceRecord:
         with Session(self.engine) as session:
             resource = self._require_resource(session, resource_id)
             source_status = resource.lifecycle_status
@@ -70,6 +79,8 @@ class ResourceRegistry:
             event_type="resource_status_changed",
             resource_type=resource.resource_type,
             payload={"resource_id": resource.id, "from": source_status, "to": target_status},
+            resource_id=resource.id,
+            correlation_id=correlation_id,
         )
         return resource
 
@@ -106,8 +117,20 @@ class ResourceRegistry:
                 "to_resource_id": to_resource_id,
                 "relation_type": relation_type,
             },
+            resource_id=from_resource_id,
         )
         return relation
+
+    def list_audit_events(self, resource_id: str) -> list[AuditEvent]:
+        with Session(self.engine) as session:
+            self._require_resource(session, resource_id)
+            return list(
+                session.scalars(
+                    select(AuditEvent)
+                    .where(AuditEvent.resource_id == resource_id)
+                    .order_by(AuditEvent.created_at)
+                )
+            )
 
     def get_relations(self, resource_id: str, direction: str = "both") -> list[ResourceRelationRecord]:
         if direction not in {"incoming", "outgoing", "both"}:
