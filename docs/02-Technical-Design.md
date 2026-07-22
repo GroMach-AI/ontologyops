@@ -385,7 +385,7 @@ frontend/src/
 | 文档 | 不处理扫描件 OCR；提取异常以失败 run 记录。 |
 | 查询 | DuckDB 只读、参数绑定、资源和字段白名单、输出/超时预算。 |
 | 备份 | 停机或 SQLite 在线备份：metadata DB + `data/` 目录作为同一备份单元。 |
-| 恢复 | 先还原最近确认的 staging/prod 标签与相应数据快照，再诊断；遵循 `04-Development-Version-Control.md`。 |
+| 恢复 | 先还原最近确认的 `local-*` / `release-*` 标签与相应数据快照，再诊断；遵循 `04-Development-Version-Control.md`。 |
 | 观测 | 结构化服务日志 + PipelineRun/ToolCall/PolicyDecision/AuditEvent；所有请求携带 correlation ID。 |
 
 ## 11. 测试与浏览器验收策略
@@ -402,7 +402,7 @@ frontend/src/
 
 ### 11.2 不可替代的浏览器验收
 
-每次模块准备进入 staging 前，生成一组带随机供应商名、订单号、日期和库存值的 CSV。断言：
+每次模块准备进入本地验收前，生成一组带随机供应商名、订单号、日期和库存值的 CSV。断言：
 
 1. 原始文件与 DatasetVersion 的行数、字段、profile 来自新文件；
 2. 质量失败样本能定位到新文件中的故意异常；
@@ -423,9 +423,9 @@ frontend/src/
 | 3. M3 本体发布 | 草稿、映射 DSL、候选、校验、release、回滚 | M1/M2 | 新数据产生的发布 manifest 和工具目录正确。 |
 | 4. M4 治理 | Policy、字段裁剪、血缘、影响分析、审计 | M0/M3 | 页面、工具发现、执行、证据一致拒绝。 |
 | 5. M5/M6 智能助手 | Profile、Mock/GPT/DeepSeek、受控计划与证据 | M3/M4 | 新数据问答可回溯至 SourceAsset。 |
-| 6. 集成验收 | PRD E2E-01/02/03、浏览器记录、staging tag | 所有模块 | 产品负责人浏览器确认后再进入下一阶段。 |
+| 6. 集成验收 | PRD E2E-01/02/03、浏览器记录、local tag | 所有模块 | 产品负责人本地浏览器确认后再进入下一阶段。 |
 
-每一阶段均遵守版本控制文档：改动提交至 `dev`、部署 staging、项目负责人确认、打 staging 标签；仅确认后合并 `main` 并打 production 标签。由于当前仓库尚无首次提交和远端，阶段 0 之前必须先确认远端并建立 `main`/`dev` 初始基线。
+每一阶段均遵守版本控制文档：改动提交至 `dev`、在本地完成自动化测试和浏览器验收、项目负责人确认后打 `local-*` 标签；仅确认后合并 `main` 并打 `release-*` 标签。本期不建设独立 staging 或 production 环境。
 
 ## 13. 已知风险与明确取舍
 
