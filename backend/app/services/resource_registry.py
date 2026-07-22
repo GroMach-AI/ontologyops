@@ -151,6 +151,12 @@ class ResourceRegistry:
                 )
             return list(session.scalars(statement))
 
+    def get_resource(self, resource_id: str) -> ResourceRecord:
+        with Session(self.engine) as session:
+            resource = self._require_resource(session, resource_id)
+            session.expunge(resource)
+            return resource
+
     @staticmethod
     def _require_resource(session: Session, resource_id: str) -> ResourceRecord:
         resource = session.get(ResourceRecord, resource_id)

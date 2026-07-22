@@ -7,6 +7,7 @@ from app.api.governance import router as governance_router
 from app.api.models import router as models_router
 from app.api.pipelines import router as pipelines_router
 from app.api.overview import router as overview_router
+from app.api.resources import router as resources_router
 
 
 app = FastAPI(title="OntologyOps API")
@@ -18,6 +19,7 @@ app.include_router(governance_router)
 app.include_router(models_router)
 app.include_router(pipelines_router)
 app.include_router(overview_router)
+app.include_router(resources_router)
 
 
 @app.get("/api/health")
