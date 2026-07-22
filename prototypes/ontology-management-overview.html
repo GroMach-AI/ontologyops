@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OntologyOps · 本体管理</title>
+    <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: oklch(0.982 0.004 145);
+        --surface: oklch(1 0 0);
+        --surface-subtle: oklch(0.972 0.006 155);
+        --line: oklch(0.9 0.01 155);
+        --line-strong: oklch(0.82 0.014 155);
+        --ink: oklch(0.23 0.018 155);
+        --ink-soft: oklch(0.48 0.018 155);
+        --ink-faint: oklch(0.63 0.015 155);
+        --graphite: oklch(0.17 0.018 155);
+        --accent: oklch(0.53 0.13 160);
+        --accent-strong: oklch(0.45 0.115 160);
+        --accent-soft: oklch(0.94 0.04 160);
+        --success: oklch(0.55 0.14 150);
+        --warning: oklch(0.66 0.15 72);
+        --danger: oklch(0.58 0.18 28);
+        --radius: 10px;
+        --shadow: 0 3px 7px oklch(0.16 0.016 155 / 0.07);
+        font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 1120px; background: var(--canvas); color: var(--ink); }
+      button { font: inherit; cursor: pointer; }
+      button:focus-visible, [role="button"]:focus-visible { outline: 3px solid oklch(0.72 0.1 160 / 0.45); outline-offset: 2px; }
+      .app { min-height: 100vh; }
+
+      .topbar {
+        height: 64px;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        padding: 0 28px;
+        color: oklch(0.94 0.005 155);
+        background: var(--graphite);
+        border-bottom: 1px solid oklch(0.3 0.018 155);
+      }
+      .brand { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 720; letter-spacing: -0.025em; }
+      .brand-mark { color: oklch(0.76 0.16 160); font-size: 24px; }
+      .workspace-switcher { display: flex; align-items: center; gap: 8px; padding: 0 0 0 20px; border: 0; border-left: 1px solid oklch(0.34 0.018 155); color: oklch(0.95 0.004 155); background: transparent; font-size: 14px; font-weight: 650; }
+      .workspace-switcher:hover { color: oklch(0.76 0.16 160); }
+      .top-status { display: flex; align-items: center; gap: 7px; color: oklch(0.7 0.12 160); font-size: 13px; }
+      .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+      .top-version { margin-left: auto; color: oklch(0.7 0.012 155); font-size: 12px; letter-spacing: 0.02em; }
+      .top-tools { display: flex; align-items: center; gap: 6px; }
+      .top-icon { width: 30px; height: 30px; border: 0; border-radius: 6px; color: oklch(0.9 0.006 155); background: transparent; font-size: 19px; }
+      .top-icon:hover { background: oklch(0.31 0.018 155); }
+
+      .shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: calc(100vh - 64px); }
+      .sidebar { display: flex; flex-direction: column; padding: 20px 12px; border-right: 1px solid var(--line); background: oklch(0.989 0.003 155); }
+      .nav { display: grid; gap: 5px; }
+      .nav-item {
+        width: 100%; min-height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 13px;
+        border: 0; border-radius: 7px; color: var(--ink-soft); background: transparent; font-size: 14px; text-align: left; font-weight: 560;
+      }
+      .nav-item i { width: 18px; font-size: 20px; }
+      .nav-item:hover { color: var(--ink); background: var(--surface-subtle); }
+      .nav-item.is-active { color: var(--accent-strong); background: var(--accent-soft); font-weight: 700; }
+      .sidebar-foot { margin-top: auto; padding: 16px 10px 2px; color: var(--ink-faint); font-size: 12px; border-top: 1px solid var(--line); }
+      .sidebar-foot strong { display: block; margin-top: 5px; color: var(--ink-soft); font-size: 13px; }
+
+      main { min-width: 0; padding: 32px 36px 42px; }
+      .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
+      .page-heading h1 { margin: 0; font-size: 28px; letter-spacing: -0.035em; line-height: 1.12; }
+      .heading-meta { display: flex; align-items: center; gap: 12px; margin-top: 8px; color: var(--ink-soft); font-size: 13px; }
+      .draft-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid oklch(0.75 0.08 160); border-radius: 5px; color: var(--accent-strong); background: oklch(0.985 0.013 160); font-size: 12px; font-weight: 700; }
+      .primary-button, .secondary-button {
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 13px; border-radius: 6px; font-size: 13px; font-weight: 680; transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+      }
+      .primary-button { border: 1px solid var(--accent); color: white; background: var(--accent); box-shadow: var(--shadow); }
+      .primary-button:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+      .secondary-button { border: 1px solid var(--line-strong); color: var(--ink-soft); background: var(--surface); }
+      .secondary-button:hover { color: var(--ink); border-color: var(--ink-faint); }
+      .primary-button:active, .secondary-button:active, .tool-button:active { transform: translateY(1px); }
+
+      .workspace {
+        display: grid; grid-template-columns: minmax(640px, 1.72fr) minmax(330px, .82fr);
+        overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow);
+      }
+      .left-column { min-width: 0; border-right: 1px solid var(--line); }
+      .canvas-panel { position: relative; min-height: 525px; overflow: hidden; background: var(--surface); }
+      .canvas-toolbar { position: absolute; z-index: 4; top: 16px; left: 16px; display: flex; gap: 6px; }
+      .tool-button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--ink-soft); background: var(--surface); font-size: 17px; }
+      .tool-button:hover { color: var(--accent-strong); border-color: oklch(0.72 0.08 160); }
+      .canvas-legend { position: absolute; z-index: 4; top: 18px; right: 18px; display: flex; align-items: center; gap: 14px; color: var(--ink-faint); font-size: 11px; }
+      .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+      .legend-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+      .legend-line { width: 16px; height: 1px; background: var(--ink-faint); }
+      .graph-stage {
+        position: absolute; inset: 0; transform-origin: 50% 47%; transition: transform 180ms ease;
+        background-image: radial-gradient(oklch(0.85 0.012 160) 0.7px, transparent 0.8px);
+        background-size: 16px 16px;
+      }
+      .connector { position: absolute; height: 1px; background: oklch(0.51 0.02 160); transform-origin: 0 50%; z-index: 1; }
+      .connector::after { content: ""; position: absolute; right: -1px; top: -3px; width: 7px; height: 7px; border-top: 1px solid oklch(0.51 0.02 160); border-right: 1px solid oklch(0.51 0.02 160); transform: rotate(45deg); }
+      .connector-label { position: absolute; z-index: 2; padding: 2px 5px; color: var(--ink-soft); background: var(--surface); font-size: 11px; white-space: nowrap; }
+      .line-a { left: 26%; top: 38%; width: 24%; transform: rotate(0deg); }.label-a { left: 37%; top: 34.8%; }
+      .line-b { left: 58%; top: 42%; width: 24%; transform: rotate(0deg); }.label-b { left: 68%; top: 38.8%; }
+      .line-c { left: 52%; top: 43%; width: 16%; transform: rotate(90deg); }.label-c { left: 56%; top: 56%; }
+      .line-d { left: 57%; top: 70%; width: 25%; transform: rotate(-31deg); }.label-d { left: 68%; top: 60%; }
+      .node {
+        position: absolute; z-index: 3; width: 174px; min-height: 78px; padding: 15px 13px; border: 1px solid oklch(0.65 0.017 160); border-radius: 8px; background: oklch(1 0 0 / .97); box-shadow: 0 2px 4px oklch(0.16 0.016 155 / .04);
+        transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+      }
+      .node:hover { border-color: var(--accent); box-shadow: 0 3px 7px oklch(0.17 0.018 155 / .11); transform: translateY(-1px); }
+      .node-row { display: flex; align-items: center; gap: 8px; }
+      .node-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); }
+      .node-name { font-size: 15px; font-weight: 720; letter-spacing: -0.015em; }
+      .node-type { margin-top: 6px; color: var(--ink-soft); font-size: 12px; }
+      .node-doc { margin-left: auto; color: var(--ink-faint); font-size: 17px; }
+      .supplier { left: 8%; top: 27%; }.order { left: 43%; top: 27%; }.material { left: 74%; top: 27%; }.inventory { left: 43%; top: 63%; }
+      .minimap { position: absolute; z-index: 4; left: 18px; bottom: 18px; width: 136px; height: 84px; padding: 9px; border: 1px solid oklch(0.69 0.07 160); border-radius: 6px; background: oklch(1 0 0 / .94); }
+      .mini-frame { position: relative; width: 100%; height: 100%; border: 1px solid oklch(0.72 0.12 160); background: var(--accent-soft); }
+      .mini-node { position: absolute; width: 21px; height: 12px; border: 1px solid oklch(0.49 0.025 160); background: var(--surface); }.mini-node:nth-child(1) { left: 7px; top: 12px; }.mini-node:nth-child(2) { left: 47px; top: 12px; }.mini-node:nth-child(3) { right: 7px; top: 12px; }.mini-node:nth-child(4) { left: 47px; bottom: 10px; }
+      .zoom-panel { position: absolute; right: 18px; bottom: 18px; display: grid; z-index: 4; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+      .zoom-panel .tool-button { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }.zoom-panel .tool-button:last-child { border-bottom: 0; }
+
+      .readiness { padding: 19px 20px 21px; border-top: 1px solid var(--line); }
+      .panel-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+      .panel-title h2, .change-title { margin: 0; font-size: 16px; letter-spacing: -0.015em; }
+      .panel-title .hint { color: var(--ink-faint); font-size: 12px; }
+      .checklist { margin-top: 15px; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+      .check-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 45px; padding: 0 13px; border-bottom: 1px solid var(--line); font-size: 13px; }
+      .check-row:last-child { border-bottom: 0; }.check-row i { font-size: 18px; }.check-row .detail { color: var(--ink-soft); font-size: 12px; }.state-ok { color: var(--success); font-weight: 680; font-size: 12px; }.state-warn { color: var(--warning); font-weight: 680; font-size: 12px; }
+      .readiness-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; color: var(--ink-soft); font-size: 12px; }.readiness-footer strong { color: var(--warning); }.details-link { border: 0; color: var(--accent-strong); background: transparent; font-weight: 700; }
+
+      .right-column { min-width: 0; background: oklch(0.996 0.002 155); }
+      .change-title { padding: 22px 20px 16px; }
+      .tabs { display: flex; padding: 0 20px; border-bottom: 1px solid var(--line); }
+      .tab { position: relative; padding: 10px 0 11px; margin-right: 22px; border: 0; color: var(--ink-faint); background: transparent; font-size: 12px; white-space: nowrap; }
+      .tab:hover { color: var(--ink); }.tab.is-active { color: var(--accent-strong); font-weight: 700; }.tab.is-active::after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--accent); }
+      .activity-group { padding: 15px 20px; border-bottom: 1px solid var(--line); }
+      .activity-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+      .activity-header h3 { margin: 0; font-size: 13px; }.activity-header button { border: 0; color: var(--accent-strong); background: transparent; font-size: 12px; font-weight: 700; }
+      .activity-list { list-style: none; padding: 0; margin: 0; }
+      .activity-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 34px; border-bottom: 1px solid oklch(0.93 0.008 155); }
+      .activity-list li:last-child { border-bottom: 0; }.activity-list i { font-size: 17px; }.activity-list .name { overflow: hidden; color: var(--ink-soft); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.activity-list .time { color: var(--ink-faint); font-size: 11px; }.green { color: var(--success); }.orange { color: var(--warning); }.blue { color: oklch(0.56 0.14 250); }
+      .empty-note { display: none; padding: 24px 20px; color: var(--ink-soft); font-size: 13px; line-height: 1.6; }
+      .right-column[data-tab="quality"] .change-group, .right-column[data-tab="quality"] .mapping-group, .right-column[data-tab="mapping"] .change-group, .right-column[data-tab="mapping"] .quality-group { display: none; }
+      .right-column[data-tab="quality"] .empty-note, .right-column[data-tab="mapping"] .empty-note { display: block; }
+
+      .toast { position: fixed; z-index: 10; right: 28px; bottom: 28px; display: flex; align-items: center; gap: 9px; padding: 12px 14px; border: 1px solid oklch(0.7 0.07 160); border-radius: 8px; color: oklch(0.34 0.075 160); background: oklch(0.97 0.025 160); box-shadow: var(--shadow); font-size: 13px; font-weight: 650; opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity 180ms ease, transform 180ms ease; }
+      .toast.is-visible { opacity: 1; transform: translateY(0); }
+      .toast i { font-size: 18px; }
+
+      @media (max-width: 1200px) {
+        body { min-width: 980px; }.shell { grid-template-columns: 178px minmax(0, 1fr); }.sidebar { padding-inline: 9px; }.nav-item { padding-inline: 10px; }
+        main { padding: 26px 24px; }.workspace { grid-template-columns: minmax(570px, 1.55fr) minmax(300px, .8fr); }.canvas-panel { min-height: 490px; }.node { width: 156px; }
+      }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 1ms !important; animation-duration: 1ms !important; } }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand"><i class="ph ph-hexagon brand-mark" aria-hidden="true"></i><span>OntologyOps</span></div>
+        <button class="workspace-switcher" type="button" aria-label="切换当前本体"><span>采购与供应链</span><i class="ph ph-caret-down" aria-hidden="true"></i></button>
+        <div class="top-status"><span class="status-dot"></span><span>状态：草稿</span></div>
+        <div class="top-version">本体版本 · v0.8.0-draft.3</div>
+        <div class="top-tools" aria-label="全局工具">
+          <button class="top-icon" type="button" aria-label="通知"><i class="ph ph-bell"></i></button>
+          <button class="top-icon" type="button" aria-label="帮助"><i class="ph ph-question"></i></button>
+          <button class="top-icon" type="button" aria-label="个人账户"><i class="ph ph-user-circle"></i></button>
+        </div>
+      </header>
+
+      <div class="shell">
+        <aside class="sidebar">
+          <nav class="nav" aria-label="主导航">
+            <a class="nav-item" href="home-workspace.html"><i class="ph ph-house"></i><span>首页</span></a>
+            <a class="nav-item" href="data-pipelines.html"><i class="ph ph-database"></i><span>数据与管道</span></a>
+            <a class="nav-item is-active" href="ontology-management-overview.html" aria-current="page"><i class="ph ph-share-network"></i><span>本体管理</span></a>
+            <a class="nav-item" href="assistant.html"><i class="ph ph-chats-circle"></i><span>智能助手</span></a>
+            <a class="nav-item" href="governance-lineage.html"><i class="ph ph-shield-check"></i><span>治理与可追溯</span></a>
+            <a class="nav-item" href="model-management.html"><i class="ph ph-cube"></i><span>模型管理</span></a>
+          </nav>
+          <div class="sidebar-foot">当前角色<strong>数据建模员 · 可编辑</strong></div>
+        </aside>
+
+        <main>
+          <div class="page-heading">
+            <div>
+              <h1>本体管理</h1>
+              <div class="heading-meta"><span>采购与供应链</span><span>·</span><span class="draft-badge"><span class="status-dot"></span>草稿 v2</span></div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <a class="secondary-button" href="ontology-object-mapping.html"><i class="ph ph-list-tree"></i>对象与映射</a>
+              <button class="secondary-button" id="changeButton" type="button"><i class="ph ph-list-dashes"></i>查看变更</button>
+              <button class="primary-button" id="publishButton" type="button"><i class="ph ph-upload-simple"></i>发布草稿</button>
+            </div>
+          </div>
+
+          <section class="workspace" aria-label="本体草稿工作区">
+            <div class="left-column">
+              <section class="canvas-panel" aria-label="本体对象关系图">
+                <div class="canvas-toolbar">
+                  <button class="tool-button" id="fitGraph" type="button" aria-label="适配画布"><i class="ph ph-corners-out"></i></button>
+                  <button class="tool-button" id="addObject" type="button" aria-label="添加对象"><i class="ph ph-plus"></i></button>
+                  <button class="tool-button" id="toggleGrid" type="button" aria-label="显示或隐藏网格"><i class="ph ph-dots-nine"></i></button>
+                </div>
+                <div class="canvas-legend" aria-label="图例"><span class="legend-item"><span class="legend-dot"></span>对象</span><span class="legend-item"><span class="legend-line"></span>关系</span></div>
+                <div class="graph-stage" id="graphStage">
+                  <span class="connector line-a"></span><span class="connector-label label-a">提供</span>
+                  <span class="connector line-b"></span><span class="connector-label label-b">包含</span>
+                  <span class="connector line-c"></span><span class="connector-label label-c">入库</span>
+                  <span class="connector line-d"></span><span class="connector-label label-d">存储</span>
+                  <article class="node supplier"><div class="node-row"><span class="node-dot"></span><strong class="node-name">Supplier</strong><i class="ph ph-file-text node-doc"></i></div><div class="node-type">供应商</div></article>
+                  <article class="node order"><div class="node-row"><span class="node-dot"></span><strong class="node-name">PurchaseOrder</strong><i class="ph ph-file-text node-doc"></i></div><div class="node-type">采购订单</div></article>
+                  <article class="node material"><div class="node-row"><span class="node-dot"></span><strong class="node-name">Material</strong><i class="ph ph-file-text node-doc"></i></div><div class="node-type">物料</div></article>
+                  <article class="node inventory"><div class="node-row"><span class="node-dot"></span><strong class="node-name">Inventory</strong><i class="ph ph-file-text node-doc"></i></div><div class="node-type">库存</div></article>
+                </div>
+                <div class="minimap" aria-hidden="true"><div class="mini-frame"><span class="mini-node"></span><span class="mini-node"></span><span class="mini-node"></span><span class="mini-node"></span></div></div>
+                <div class="zoom-panel">
+                  <button class="tool-button" id="zoomIn" type="button" aria-label="放大"><i class="ph ph-plus"></i></button>
+                  <button class="tool-button" id="zoomOut" type="button" aria-label="缩小"><i class="ph ph-minus"></i></button>
+                  <button class="tool-button" id="resetZoom" type="button" aria-label="重置缩放"><i class="ph ph-arrows-clockwise"></i></button>
+                </div>
+              </section>
+
+              <section class="readiness" aria-labelledby="readinessTitle">
+                <div class="panel-title"><h2 id="readinessTitle">发布就绪检查清单</h2><span class="hint">发布前需完成所有关键校验</span></div>
+                <div class="checklist">
+                  <div class="check-row"><i class="ph ph-check-circle green"></i><strong>本体结构完整性</strong><span class="state-ok">已通过</span></div>
+                  <div class="check-row"><i class="ph ph-check-circle green"></i><span class="detail">类与属性有定义，层级关系无循环</span><span class="state-ok">已通过</span></div>
+                  <div class="check-row"><i class="ph ph-check-circle green"></i><strong>约束与规则校验</strong><span class="state-ok">已通过</span></div>
+                  <div class="check-row"><i class="ph ph-warning-circle orange"></i><span class="detail">关键实体映射率需达到 90%</span><span class="state-warn">待处理</span></div>
+                  <div class="check-row"><i class="ph ph-warning-circle orange"></i><span class="detail">示例数据充分性仍需核验</span><span class="state-warn">待处理</span></div>
+                </div>
+                <div class="readiness-footer"><span>总体状态：<strong>待处理</strong></span><button class="details-link" id="detailsButton" type="button">查看详情 <i class="ph ph-arrow-right"></i></button></div>
+              </section>
+            </div>
+
+            <aside class="right-column" id="activityPanel" data-tab="all" aria-label="资源变更与证据">
+              <h2 class="change-title">资源变更</h2>
+              <div class="tabs" role="tablist" aria-label="资源变更筛选">
+                <button class="tab is-active" role="tab" aria-selected="true" data-tab="all" type="button">全部</button>
+                <button class="tab" role="tab" aria-selected="false" data-tab="quality" type="button">质量检查</button>
+                <button class="tab" role="tab" aria-selected="false" data-tab="mapping" type="button">映射证据</button>
+              </div>
+              <section class="activity-group change-group">
+                <div class="activity-header"><h3>实际变更（8）</h3><button type="button">查看全部</button></div>
+                <ul class="activity-list">
+                  <li><i class="ph ph-plus-circle green"></i><span class="name">新增类　Inventory（库存）</span><span class="time">10:24</span></li>
+                  <li><i class="ph ph-plus-circle green"></i><span class="name">新增属性　Inventory.location（位置）</span><span class="time">10:21</span></li>
+                  <li><i class="ph ph-pencil-simple orange"></i><span class="name">修改属性　PurchaseOrder.orderDate</span><span class="time">10:18</span></li>
+                  <li><i class="ph ph-link green"></i><span class="name">新增关系　Inventory 存储 → Material</span><span class="time">10:15</span></li>
+                  <li><i class="ph ph-pencil-simple orange"></i><span class="name">修改类　Material（物料）</span><span class="time">10:12</span></li>
+                </ul>
+              </section>
+              <section class="activity-group quality-group">
+                <div class="activity-header"><h3>质量检查（6）</h3><button type="button">查看全部</button></div>
+                <ul class="activity-list">
+                  <li><i class="ph ph-shield-check green"></i><span class="name">类命名规范检查</span><span class="state-ok">已通过</span></li>
+                  <li><i class="ph ph-shield-check green"></i><span class="name">属性定义完整性检查</span><span class="state-ok">已通过</span></li>
+                  <li><i class="ph ph-shield-warning orange"></i><span class="name">基数约束检查</span><span class="state-warn">待处理</span></li>
+                  <li><i class="ph ph-shield-check green"></i><span class="name">循环依赖检查</span><span class="state-ok">已通过</span></li>
+                </ul>
+              </section>
+              <section class="activity-group mapping-group">
+                <div class="activity-header"><h3>映射证据（5）</h3><button type="button">查看全部</button></div>
+                <ul class="activity-list">
+                  <li><i class="ph ph-link-simple blue"></i><span class="name">Supplier　↔　ERP.SUPPLIER</span><span class="time">映射</span></li>
+                  <li><i class="ph ph-link-simple blue"></i><span class="name">PurchaseOrder　↔　ERP.PO_HEADER</span><span class="time">映射</span></li>
+                  <li><i class="ph ph-link-simple blue"></i><span class="name">Material　↔　ERP.MATERIAL</span><span class="time">映射</span></li>
+                  <li><i class="ph ph-link-simple blue"></i><span class="name">Inventory　↔　WMS.INVENTORY</span><span class="time">映射</span></li>
+                </ul>
+              </section>
+              <div class="empty-note" id="filteredNote">当前仅显示所选证据类别。切换到“全部”可回到完整的发布上下文。</div>
+            </aside>
+          </section>
+        </main>
+      </div>
+    </div>
+    <div class="toast" id="toast" role="status"><i class="ph ph-check-circle"></i><span id="toastText">草稿已准备好。</span></div>
+    <script>
+      const stage = document.getElementById("graphStage");
+      const toast = document.getElementById("toast");
+      const toastText = document.getElementById("toastText");
+      let zoom = 1;
+      let gridVisible = true;
+      let toastTimer;
+      function showToast(message) {
+        toastText.textContent = message;
+        toast.classList.add("is-visible");
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2800);
+      }
+      function applyZoom() { stage.style.transform = "scale(" + zoom + ")"; }
+      document.getElementById("zoomIn").addEventListener("click", () => { zoom = Math.min(1.2, +(zoom + 0.05).toFixed(2)); applyZoom(); });
+      document.getElementById("zoomOut").addEventListener("click", () => { zoom = Math.max(0.86, +(zoom - 0.05).toFixed(2)); applyZoom(); });
+      document.getElementById("resetZoom").addEventListener("click", () => { zoom = 1; applyZoom(); });
+      document.getElementById("fitGraph").addEventListener("click", () => { zoom = 0.96; applyZoom(); showToast("已适配当前对象关系图。"); });
+      document.getElementById("toggleGrid").addEventListener("click", () => {
+        gridVisible = !gridVisible;
+        stage.style.backgroundImage = gridVisible ? "radial-gradient(oklch(0.85 0.012 160) 0.7px, transparent 0.8px)" : "none";
+        showToast(gridVisible ? "已显示画布网格。" : "已隐藏画布网格。");
+      });
+      document.getElementById("addObject").addEventListener("click", () => showToast("原型模式：新增对象将在正式建模器中打开。"));
+      document.getElementById("detailsButton").addEventListener("click", () => showToast("发现 2 项待处理检查：映射覆盖率与示例数据充分性。"));
+      document.getElementById("changeButton").addEventListener("click", () => {
+        document.getElementById("activityPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("已聚焦资源变更与证据。");
+      });
+      document.getElementById("publishButton").addEventListener("click", () => showToast("尚有 2 项发布检查待处理，当前草稿不能发布。"));
+      document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((item) => { item.classList.remove("is-active"); item.setAttribute("aria-selected", "false"); });
+        tab.classList.add("is-active");
+        tab.setAttribute("aria-selected", "true");
+        document.getElementById("activityPanel").dataset.tab = tab.dataset.tab;
+      }));
+    </script>
+  </body>
+</html>
