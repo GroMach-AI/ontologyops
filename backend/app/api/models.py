@@ -44,6 +44,10 @@ class LocalSecretRequest(BaseModel):
     api_key: str = Field(min_length=8, max_length=1024)
 
 
+class VerifyModelRequest(BaseModel):
+    api_key: str | None = Field(default=None, min_length=8, max_length=1024)
+
+
 def _ensure_defaults() -> list[ModelProviderConfig]:
     with Session(runtime_metadata_engine()) as session:
         items = session.scalars(select(ModelProviderConfig)).all()
@@ -179,7 +183,7 @@ def update_model(provider_id: str, request: ModelStateRequest, x_demo_role: str 
 
 
 @router.post("/{provider_id}/verify")
-def verify_model(provider_id: str, x_demo_role: str = Header(default="operator")) -> dict[str, object]:
+def verify_model(provider_id: str, request: VerifyModelRequest | None = None, x_demo_role: str = Header(default="operator")) -> dict[str, object]:
     engine = runtime_metadata_engine()
     if not require_resource_access(engine, x_demo_role, "model_config", "update"):
         raise HTTPException(status_code=403, detail="Role is not allowed to verify model configuration")
@@ -194,7 +198,7 @@ def verify_model(provider_id: str, x_demo_role: str = Header(default="operator")
             item.last_verified_at = datetime.now(UTC)
             success, error = True, None
         else:
-            success, error = ModelProviderService(engine).verify(item)
+            success, error = ModelProviderService(engine).verify(item, request.api_key if request else None)
             item.verification_status = "verified" if success else "failed"
             item.last_error = error
             item.last_verified_at = datetime.now(UTC) if success else None

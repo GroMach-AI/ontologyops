@@ -26,3 +26,16 @@ it("sends selected V4 Pro for a configuration update", async () => {
   await user.selectOptions(await screen.findByRole("combobox", { name: "选择模型" }), "deepseek-v4-pro");
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/models/deepseek", expect.objectContaining({ method: "PATCH" })));
 });
+
+it("keeps a failed connection result visible after refreshing the profile", async () => {
+  const failed = { ...deepseek, verification_status: "failed", last_error: "无法验证连接，请检查 Key、Base URL 与网络。" };
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ providers: [deepseek] }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => failed })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ providers: [failed] }) });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ModelPage role="admin" />);
+  const user = userEvent.setup();
+  await user.click((await screen.findAllByRole("button", { name: "测试连接" })).at(-1)!);
+  expect((await screen.findAllByText("无法验证连接，请检查 Key、Base URL 与网络。")).length).toBeGreaterThan(0);
+});

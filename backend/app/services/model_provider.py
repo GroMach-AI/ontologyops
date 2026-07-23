@@ -72,9 +72,9 @@ class ModelProviderService:
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
             raise ModelProviderUnavailable("真实模型调用失败，请检查连接与服务状态后重试。") from error
 
-    def verify(self, provider: ModelProviderConfig) -> tuple[bool, str | None]:
+    def verify(self, provider: ModelProviderConfig, api_key_override: str | None = None) -> tuple[bool, str | None]:
         """Verify credential reachability without sending a prompt or business data."""
-        api_key = os.getenv(provider.api_key_env or "")
+        api_key = api_key_override or os.getenv(provider.api_key_env or "")
         if not api_key:
             return False, "未检测到本机环境变量中的 API Key。"
         if not provider.base_url:
