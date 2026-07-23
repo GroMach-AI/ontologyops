@@ -34,7 +34,10 @@ def _migrate_sqlite_schema(engine: Engine) -> None:
             "temperature": "VARCHAR(16) NOT NULL DEFAULT '0'",
             "max_tokens": "INTEGER NOT NULL DEFAULT 1024",
             "agent_enabled": "VARCHAR(8) NOT NULL DEFAULT 'true'",
-            "modeling_enabled": "VARCHAR(8) NOT NULL DEFAULT 'true'",
+        "modeling_enabled": "VARCHAR(8) NOT NULL DEFAULT 'true'",
+        "verification_status": "VARCHAR(16) NOT NULL DEFAULT 'unconfigured'",
+        "last_verified_at": "DATETIME",
+        "last_error": "VARCHAR(255)",
         }
         with engine.begin() as connection:
             for name, definition in additions.items():

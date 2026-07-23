@@ -26,3 +26,14 @@
 开发从 M0 资源注册与关系内核开始，随后进入“新数据导入 → 质量 → 本体发布 → 智能助手 → 可追溯”的端到端闭环。任何模块都必须用新上传的数据完成浏览器验收；种子工厂数据仅可用于开发测试。
 
 版本、staging、production 和回滚必须遵循 [开发版本控制规则](docs/04-Development-Version-Control.md)。
+# OntologyOps
+
+## 本地模型接入
+
+首个真实 Provider 使用 DeepSeek。复制 `.env.example` 为 `.env`，仅在本机填写：
+
+```bash
+DEEPSEEK_API_KEY=你的真实密钥
+```
+
+启动 `./scripts/dev.sh` 后，在“模型管理”选择 `DeepSeek V4 Flash` 或 `DeepSeek V4 Pro`，点击“测试连接”；只有验证成功的模型可以设为默认。`.env` 已被 Git 忽略，API Key 不会被浏览器、SQLite 或审计日志保存。

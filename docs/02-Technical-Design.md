@@ -293,14 +293,15 @@ field_redactions, evidence_items
 | Provider | 用途 | 实现边界 |
 | --- | --- | --- |
 | GPT | 候选生成、工具计划、回答组织 | 使用服务端环境变量；调用前后记录去敏元数据。 |
-| DeepSeek | 同 GPT 的可选路由 | 使用兼容 HTTP 接口；模型名、endpoint、超时均由 ModelProfile 管理。 |
+| DeepSeek | 首选候选生成与受控回答路由 | OpenAI 兼容 HTTP 接口；可选 `deepseek-v4-flash` 或 `deepseek-v4-pro`，模型名、endpoint、超时均由 ModelProfile 管理。 |
+| 兼容 API | 管理员手工配置的 OpenAI 兼容模型 | 使用本机 `secret_ref` 与 Base URL；不承诺其他协议或模型市场。 |
 | Mock | 无密钥的可重复演示/测试 | 返回固定的结构化 ProviderResponse，所有调用携带 `mode=mock`，UI 不得标为真实模型。 |
 
 ### 7.2 ModelProfile
 
 `ModelProfile` 保存 `provider`、`model_name`、`secret_ref`、`base_url`、`timeout_ms`、`max_output_tokens`、`enabled`、`allowed_purposes`、`verification_status`。密钥值从不进入表、API 返回、审计 payload、日志或前端。
 
-只有 `verification_status=verified` 且 `enabled=true` 的外部 profile 可用于候选生成或助手。Mock 独立启用，且 UI 的会话、ToolCall 和 AuditEvent 都必须可见 `mock` 标识。
+只有 `verification_status=verified` 且 `enabled=true` 的外部 profile 可用于候选生成或助手。真实 Profile 缺 Key、连通性异常或调用异常时返回显式失败，绝不自动改用 Mock。Mock 独立启用，且 UI 的会话、ToolCall 和 AuditEvent 都必须可见 `mock` 标识。
 
 ### 7.3 模型调用审计
 

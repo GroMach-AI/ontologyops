@@ -119,3 +119,6 @@ class ModelProviderConfig(Base):
     max_tokens: Mapped[int] = mapped_column(Integer, default=1024, nullable=False)
     agent_enabled: Mapped[str] = mapped_column(String(8), default="true", nullable=False)
     modeling_enabled: Mapped[str] = mapped_column(String(8), default="true", nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), default="unconfigured", nullable=False)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)

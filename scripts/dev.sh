@@ -2,8 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="$ROOT/.venv/bin/python"
+PYTHON="${ONTOLOGYOPS_PYTHON:-$ROOT/backend/.venv/bin/python}"
 RUNTIME_DIR="$ROOT/data/runtime"
+
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  source "$ROOT/.env"
+  set +a
+fi
 
 cleanup() {
   [[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null || true

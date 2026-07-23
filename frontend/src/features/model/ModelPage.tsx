@@ -1,36 +1,76 @@
-import { Plus, Save } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, Fish, Plug, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { DemoRole } from "../../components/AppShell";
 
-type Provider = { id: string; provider: string; model_name: string; enabled: boolean; is_default: boolean; base_url: string | null; api_key_env: string | null; temperature: number; max_tokens: number; agent_enabled: boolean; modeling_enabled: boolean; secret_policy: string };
-type ProviderForm = { provider: string; model_name: string; base_url: string; api_key_env: string; temperature: number; max_tokens: number };
-const initialForm: ProviderForm = { provider: "GPT", model_name: "gpt-4.1-mini", base_url: "https://api.openai.com/v1", api_key_env: "OPENAI_API_KEY", temperature: 0, max_tokens: 1024 };
+type ModelOption = { id: string; label: string };
+type Provider = {
+  id: string; provider: string; model_name: string; enabled: boolean; is_default: boolean;
+  base_url: string | null; api_key_env: string | null; temperature: number; max_tokens: number;
+  agent_enabled: boolean; modeling_enabled: boolean; verification_status: "unconfigured" | "pending" | "verified" | "failed";
+  last_error: string | null; available_models: ModelOption[];
+};
+
+const providerLabels = { DeepSeek: "DeepSeek 官方接口", GPT: "OpenAI 官方接口", Compatible: "OpenAI 兼容 API" } as const;
 
 export function ModelPage({ role }: { role: DemoRole }) {
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [notice, setNotice] = useState("正在加载服务端模型配置...");
-  const [form, setForm] = useState<ProviderForm>(initialForm);
-  const [showCreate, setShowCreate] = useState(false);
+  const [selectedName, setSelectedName] = useState("DeepSeek");
+  const [notice, setNotice] = useState("正在读取服务端模型配置…");
   const admin = role === "admin";
   const headers = { "Content-Type": "application/json", "X-Demo-Role": role };
-  async function loadProviders() {
+  const selected = useMemo(() => providers.find((item) => item.provider === selectedName) ?? providers.find((item) => item.provider === "DeepSeek"), [providers, selectedName]);
+
+  async function load() {
     const response = await fetch("/api/models", { headers: { "X-Demo-Role": role } });
-    if (response.ok) { setProviders((await response.json()).providers); setNotice("API Key 仅记录环境变量名，浏览器与数据库都不会保存真实密钥。"); }
-    else setNotice("模型配置加载失败。");
+    if (!response.ok) { setNotice("模型配置加载失败。"); return; }
+    setProviders((await response.json()).providers.filter((item: Provider) => item.provider !== "Mock Provider"));
+    setNotice("API Key 仅从本机环境变量读取；浏览器与数据库均不保存密钥。");
   }
-  useEffect(() => { void loadProviders(); }, []);
-  async function setDefault(provider: Provider) {
-    const response = await fetch(`/api/models/${provider.id}`, { method: "PATCH", headers, body: JSON.stringify({ enabled: true, is_default: true, base_url: provider.base_url, api_key_env: provider.api_key_env, temperature: provider.temperature, max_tokens: provider.max_tokens, agent_enabled: true, modeling_enabled: true }) });
-    if (response.ok) { setNotice(`${provider.provider} 已设为 Agent 默认模型。`); await loadProviders(); }
-    else setNotice((await response.json()).detail ?? "切换失败。");
+  useEffect(() => { void load(); }, [role]);
+
+  async function verify() {
+    if (!selected) return;
+    setNotice("正在验证连接…");
+    const response = await fetch(`/api/models/${selected.id}/verify`, { method: "POST", headers });
+    const payload = await response.json();
+    setNotice(response.ok && payload.verification_status === "verified" ? "连接已验证。现在可以设为默认模型。" : payload.last_error ?? payload.detail ?? "连接验证失败。");
+    await load();
   }
-  async function createProvider() {
-    const response = await fetch("/api/models", { method: "POST", headers, body: JSON.stringify(form) });
-    if (response.ok) { setNotice("Provider 已创建。请确认服务端环境变量中已设置对应 API Key，然后设为默认。 "); setShowCreate(false); setForm(initialForm); await loadProviders(); }
-    else setNotice((await response.json()).detail ?? "创建失败。");
+  async function save(modelName: string, asDefault = false) {
+    if (!selected) return;
+    const response = await fetch(`/api/models/${selected.id}`, { method: "PATCH", headers, body: JSON.stringify({ enabled: asDefault, is_default: asDefault, model_name: modelName, base_url: selected.base_url, api_key_env: selected.api_key_env, temperature: selected.temperature, max_tokens: selected.max_tokens, agent_enabled: true, modeling_enabled: true }) });
+    const payload = await response.json();
+    setNotice(response.ok ? (asDefault ? "已设为默认模型。" : "模型选择已保存；请重新测试连接。") : payload.detail ?? "保存失败。");
+    await load();
   }
-  return <div className="stack-lg"><div className="section-heading"><div><p className="eyebrow">Provider 与模型路由</p><h2>模型管理</h2></div><button className="primary-button" disabled={!admin} onClick={() => setShowCreate((value) => !value)}><Plus size={15} />新增 Provider</button></div><p className="inline-notice">{notice}</p>{showCreate && <div className="panel"><p className="eyebrow">GPT / DeepSeek 配置</p><h3>新增 Provider</h3><div className="form-grid"><label className="form-field"><span>Provider</span><select value={form.provider} onChange={(event) => { const provider = event.target.value; setForm({ ...form, provider, model_name: provider === "DeepSeek" ? "deepseek-chat" : "gpt-4.1-mini", base_url: provider === "DeepSeek" ? "https://api.deepseek.com/v1" : "https://api.openai.com/v1", api_key_env: provider === "DeepSeek" ? "DEEPSEEK_API_KEY" : "OPENAI_API_KEY" }); }}><option value="GPT">GPT</option><option value="DeepSeek">DeepSeek</option></select></label><Field label="模型名称" value={form.model_name} onChange={(model_name) => setForm({ ...form, model_name })} /><Field label="Base URL" value={form.base_url} onChange={(base_url) => setForm({ ...form, base_url })} /><Field label="服务端环境变量名" value={form.api_key_env} onChange={(api_key_env) => setForm({ ...form, api_key_env })} /><Field label="Temperature" value={String(form.temperature)} onChange={(value) => setForm({ ...form, temperature: Number(value) })} /><Field label="最大输出 Token" value={String(form.max_tokens)} onChange={(value) => setForm({ ...form, max_tokens: Number(value) })} /></div><div className="button-row"><button className="primary-button" onClick={() => void createProvider()}><Save size={15} />保存 Provider</button></div></div>}{!admin ? <div className="panel"><h3>模型配置仅对管理员开放</h3><p className="muted">当前角色无法读取或切换模型；智能问数仍会按已发布的受控默认配置运行。</p></div> : <><div className="two-column">{providers.map((provider) => <div className="panel provider" key={provider.id}><span className={`badge ${provider.enabled ? "success" : "neutral"}`}>{provider.is_default ? "默认启用" : provider.enabled ? "已启用" : "未启用"}</span><h3>{provider.provider}</h3><strong>{provider.model_name}</strong><p>{provider.base_url ? `${provider.base_url} · ${provider.api_key_env}` : "无需 API Key，可用于本地演示"}</p><small>{provider.secret_policy}</small>{!provider.is_default ? <div className="button-row"><button className="secondary-button" onClick={() => void setDefault(provider)}>设为 Agent 默认</button></div> : null}</div>)}</div><div className="panel"><p className="eyebrow">调用日志</p><h3>模型调用审计</h3><p className="muted">每次智能问数均记录 Provider、模型、模式、成功状态与可用 Token 使用量；详细记录在治理中心审计流水中。</p></div></>}</div>;
+
+  if (!admin) return <div className="panel"><h3>模型配置仅对管理员开放</h3><p className="muted">当前角色无法读取或调整本机模型配置。</p></div>;
+  const options = selected?.available_models ?? [];
+  return <div className="model-page">
+    <div className="section-heading"><div><p className="eyebrow">Provider 与模型路由</p><h2>模型接入</h2><p className="muted">为本体候选生成配置可验证的本地模型。</p></div></div>
+    <p className="inline-notice" role="status">{notice}</p>
+    <div className="model-console">
+      <aside className="provider-rail" aria-label="API Provider">
+        <strong>API Provider</strong>
+        <ProviderButton name="DeepSeek" label={providerLabels.DeepSeek} selected={selectedName === "DeepSeek"} provider={providers.find((item) => item.provider === "DeepSeek")} icon={<Fish size={17} />} onClick={() => setSelectedName("DeepSeek")} />
+        <ProviderButton name="GPT" label={providerLabels.GPT} selected={selectedName === "GPT"} provider={providers.find((item) => item.provider === "GPT")} icon={<Sparkles size={17} />} onClick={() => setSelectedName("GPT")} />
+        <ProviderButton name="Compatible" label={providerLabels.Compatible} selected={selectedName === "Compatible"} provider={providers.find((item) => item.provider === "Compatible")} icon={<Plug size={17} />} onClick={() => setSelectedName("Compatible")} />
+      </aside>
+      <section className="model-form">
+        {selected ? <>
+          <div className="model-form-title"><span className="model-icon"><Fish size={18} /></span><h3>{selected.provider}</h3></div>
+          <label className="form-field"><span>模型</span><select aria-label="选择模型" value={selected.model_name} onChange={(event) => void save(event.target.value)}>{options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          <label className="form-field"><span>本机密钥环境变量</span><input readOnly value={selected.api_key_env ?? "未配置"} /></label>
+          <label className="form-field"><span>Base URL</span><input readOnly value={selected.base_url ?? "未配置"} /></label>
+          <div className="model-actions"><button className="secondary-button" onClick={() => void verify()}>测试连接</button><button className="primary-button" disabled={selected.verification_status !== "verified"} onClick={() => void save(selected.model_name, true)}><Check size={15} />设为默认</button></div>
+          <p className={selected.verification_status === "verified" ? "connection-state verified" : "connection-state"}>{selected.verification_status === "verified" ? "已连接" : selected.last_error ?? "尚未验证连接"}</p>
+        </> : <p className="muted">此 Provider 尚未配置。MVP 当前只允许 DeepSeek、GPT 与明确测试用 Mock。</p>}
+      </section>
+    </div>
+  </div>;
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="form-field"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>; }
+function ProviderButton({ name, label, selected, provider, icon, onClick }: { name: "DeepSeek" | "GPT" | "Compatible"; label: string; selected: boolean; provider?: Provider; icon: React.ReactNode; onClick: () => void }) {
+  return <button className={`provider-choice ${selected ? "selected" : ""}`} onClick={onClick}><span className="provider-icon">{icon}</span><span><b>{name === "Compatible" ? "其他兼容模型" : name}</b><small>{label}</small></span>{provider?.verification_status === "verified" ? <em>已连接</em> : null}</button>;
+}

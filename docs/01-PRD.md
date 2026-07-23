@@ -40,7 +40,7 @@ OntologyOps 是一个面向企业 AI 转型方法论的本地学习型 MVP。它
 - 不做本体分支、合并、多人实时协作、生产级多租户或部署控制平面。
 - 不支持扫描件 OCR；只处理可直接提取文本的 PDF 与 `.docx`。
 - 不支持自由 text-to-SQL、Agent 直连底层表，或通过提示词绕过资源和字段权限。
-- 模型管理本期仅支持 GPT、DeepSeek 与明确标识的 Mock 模式。
+- 模型管理本期支持 GPT、DeepSeek、管理员显式添加的 OpenAI 兼容 API 与明确标识的 Mock 测试模式；真实模型只能在本机密钥验证后启用。
 
 ## 2. 官方概念对照与 MVP 边界
 
@@ -246,13 +246,13 @@ SourceAsset → DatasetVersion → PipelineNodeRun → QualityRun
 
 | 项目 | 需求 |
 | --- | --- |
-| 用户任务 | 管理员选择 Mock、GPT 或 DeepSeek，验证连接并明确每次调用使用的模型。 |
+| 用户任务 | 管理员选择 DeepSeek V4 Flash / V4 Pro、GPT 或兼容 API，验证连接并明确每次调用使用的模型。 |
 | 输入 → 输出 | Provider 配置/密钥引用、模型参数、用途 → ModelProfile、验证结果、调用记录。 |
 | 资源模型 | ModelProvider、ModelProfile、ModelInvocation；密钥不写入审计、页面或导出。 |
 | 页面与状态 | Provider/模型列表、配置、连通性验证、按“建模/问数”用途的路由与调用记录；状态见 5.2。 |
-| 真实操作 | 为 GPT 或 DeepSeek 发起验证调用；Mock 只能返回带 `mock=true` 的结构化响应；失败要可见且不得伪装成功。 |
+| 真实操作 | DeepSeek 使用 `deepseek-v4-flash` 或 `deepseek-v4-pro` 发起无提示词的连通性验证；Mock 只能返回带 `mock=true` 的结构化响应；失败要可见且不得伪装成功。 |
 | 跨模块依赖 | 为 M3 候选生成和 M6 回答提供模型；M4 管理谁可配置/使用。 |
-| 不做 | 其他 Provider、模型训练、微调、成本结算、自动模型选择。 |
+| 不做 | 除 OpenAI 兼容 HTTP API 外的其他 Provider 协议、模型训练、微调、成本结算、自动模型选择。 |
 | 浏览器验收 | 无密钥时运行 Mock 且界面清晰标识；配置可用模型后验证成功；停用模型后建模/问数不得再选择它。 |
 
 ### M6. 智能助手（Copilot，唯一应用层）
