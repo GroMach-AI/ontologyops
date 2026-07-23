@@ -31,3 +31,40 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .connection-state.failed { color: #a02c22; }
 .test-result { align-self: center; font-size: 12px; font-weight: 700; white-space: nowrap; }.test-result.passed { color: #087753; }.test-result.failed { color: #a02c22; }
 .model-console { min-height: 380px; }
+
+/* === OntologyOps shell · 对齐静态原型 === */
+.oo-app { min-height: 100vh; background: oklch(0.982 0.004 145); }
+.oo-topbar { height: 64px; display: flex; align-items: center; gap: 22px; padding: 0 28px; color: oklch(0.94 0.005 155); background: oklch(0.17 0.018 155); border-bottom: 1px solid oklch(0.3 0.018 155); }
+.oo-brand { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 720; letter-spacing: -.025em; }
+.oo-brand-mark { color: oklch(0.76 0.16 160); font-size: 24px; }
+.oo-switcher { position: relative; }
+.oo-workspace-switcher { display: flex; align-items: center; gap: 8px; padding-left: 20px; border: 0; border-left: 1px solid oklch(0.34 0.018 155); background: transparent; color: oklch(0.95 0.004 155); font-size: 14px; font-weight: 650; }
+.oo-workspace-switcher i { font-size: 15px; }
+.oo-ontology-menu { position: absolute; z-index: 8; top: 42px; left: 16px; width: 264px; overflow: hidden; border: 1px solid oklch(0.38 0.02 155); border-radius: 8px; background: #fff; box-shadow: 0 8px 18px oklch(0.16 0.016 155 / 0.15); }
+.oo-ontology-menu-head { padding: 11px 13px 8px; color: oklch(0.63 0.015 155); font-size: 11px; font-weight: 700; }
+.oo-ontology-menu-item { width: 100%; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: center; padding: 10px 13px; border: 0; color: oklch(0.23 0.018 155); background: #fff; text-align: left; font-size: 12px; }
+.oo-ontology-menu-item:hover { background: oklch(0.972 0.006 155); }
+.oo-ontology-menu-item i { color: oklch(0.45 0.115 160); font-size: 16px; }
+.oo-ontology-menu-item small { display: block; margin-top: 2px; color: oklch(0.63 0.015 155); font-size: 10px; }
+.oo-ontology-menu-create { border-top: 1px solid oklch(0.9 0.01 155); color: oklch(0.45 0.115 160); font-weight: 720; }
+.oo-top-status { display: flex; align-items: center; gap: 7px; color: oklch(0.7 0.12 160); font-size: 13px; }
+.oo-status-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: currentColor; }
+.oo-top-version { margin-left: auto; color: oklch(0.7 0.012 155); font-size: 12px; letter-spacing: .02em; }
+.oo-top-tools { display: flex; gap: 5px; }
+.oo-top-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; color: oklch(0.9 0.006 155); background: transparent; font-size: 19px; }
+.oo-top-icon:hover { background: oklch(0.31 0.018 155); }
+.oo-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: calc(100vh - 64px); }
+.oo-sidebar { display: flex; flex-direction: column; padding: 20px 12px; border-right: 1px solid oklch(0.9 0.01 155); background: oklch(0.989 0.003 155); }
+.oo-nav { display: grid; gap: 5px; }
+.oo-nav-item { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 13px; border-radius: 7px; color: oklch(0.48 0.018 155); font-size: 14px; font-weight: 560; text-decoration: none; }
+.oo-nav-item i { width: 18px; font-size: 20px; }
+.oo-nav-item:hover { color: oklch(0.23 0.018 155); background: oklch(0.972 0.006 155); }
+.oo-nav-item.is-active { color: oklch(0.45 0.115 160); background: oklch(0.94 0.04 160); font-weight: 700; }
+.oo-sidebar-foot { margin-top: auto; padding: 16px 10px 2px; color: oklch(0.63 0.015 155); font-size: 12px; border-top: 1px solid oklch(0.9 0.01 155); display: grid; gap: 6px; }
+.oo-sidebar-foot strong { display: block; color: oklch(0.48 0.018 155); font-size: 13px; }
+.oo-sidebar-foot select { min-height: 30px; padding: 4px 6px; border: 1px solid oklch(0.82 0.014 155); border-radius: 5px; background: #fff; color: oklch(0.23 0.018 155); font-size: 12px; }
+.oo-shell main { min-width: 0; padding: 32px 36px 42px; }
+.oo-page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
+.oo-page-heading h1 { margin: 4px 0 0; font-size: 28px; letter-spacing: -.035em; line-height: 1.12; }
+.oo-eyebrow { display: block; color: oklch(0.45 0.115 160); font-size: 12px; font-weight: 750; letter-spacing: .035em; }
+@media (max-width: 1120px) { .oo-shell { grid-template-columns: 180px minmax(0, 1fr); } .oo-shell main { padding: 26px 24px 42px; } }
