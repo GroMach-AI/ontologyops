@@ -1,4 +1,7 @@
 from datetime import UTC, datetime
+import os
+from pathlib import Path
+import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException
@@ -35,6 +38,10 @@ class CreateProviderRequest(BaseModel):
     api_key_env: str = Field(min_length=1, max_length=128)
     temperature: float = Field(default=0, ge=0, le=2)
     max_tokens: int = Field(default=1024, ge=64, le=16384)
+
+
+class LocalSecretRequest(BaseModel):
+    api_key: str = Field(min_length=8, max_length=1024)
 
 
 def _ensure_defaults() -> list[ModelProviderConfig]:
@@ -196,3 +203,32 @@ def verify_model(provider_id: str, x_demo_role: str = Header(default="operator")
         result = _serialize(item)
     write_audit_event(engine, actor=x_demo_role, event_type="model_provider_verified", resource_type="model_provider", payload={"provider_id": provider_id, "provider": result["provider"], "model_name": result["model_name"], "status": result["verification_status"]}, outcome="succeeded" if success else "failed")
     return result
+
+
+@router.put("/{provider_id}/local-secret")
+def set_local_secret(provider_id: str, request: LocalSecretRequest, x_demo_role: str = Header(default="operator")) -> dict[str, str]:
+    """Local-MVP convenience endpoint: persist only to ignored .env, never metadata."""
+    engine = runtime_metadata_engine()
+    if not require_resource_access(engine, x_demo_role, "model_config", "update"):
+        raise HTTPException(status_code=403, detail="Role is not allowed to set local model secret")
+    _ensure_defaults()
+    with Session(engine) as session:
+        item = session.get(ModelProviderConfig, provider_id)
+        if item is None or item.provider == "Mock Provider" or not item.api_key_env:
+            raise HTTPException(status_code=400, detail="This provider does not accept a local API key")
+        secret_ref = item.api_key_env
+    _store_local_secret(secret_ref, request.api_key)
+    write_audit_event(engine, actor=x_demo_role, event_type="model_local_secret_set", resource_type="model_provider", payload={"provider_id": provider_id, "secret_ref": secret_ref})
+    return {"secret_ref": secret_ref, "status": "stored_locally"}
+
+
+def _store_local_secret(secret_ref: str, api_key: str) -> None:
+    env_path = Path(os.getenv("ONTOLOGYOPS_ENV_FILE", "../.env")).resolve()
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = env_path.read_text() if env_path.exists() else ""
+    matcher = re.compile(rf"^{re.escape(secret_ref)}=.*$", re.MULTILINE)
+    line = f"{secret_ref}={api_key}"
+    updated = matcher.sub(line, existing) if matcher.search(existing) else f"{existing.rstrip()}\n{line}\n"
+    env_path.write_text(updated.lstrip())
+    os.chmod(env_path, 0o600)
+    os.environ[secret_ref] = api_key

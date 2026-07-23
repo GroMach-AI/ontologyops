@@ -1,11 +1,16 @@
 import type { ReactNode } from "react";
 import {
+  Bell,
   Bot,
   Boxes,
+  ChevronDown,
+  CircleHelp,
   DatabaseZap,
   GitBranch,
+  Hexagon,
   Home,
   ShieldCheck,
+  UserCircle,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
@@ -38,11 +43,12 @@ export function AppShell({ children, role, onRoleChange }: AppShellProps) {
 
   return (
     <div className="app-shell">
+      <header className="app-topbar">
+        <div className="app-brand"><Hexagon size={20} /><strong>OntologyOps</strong></div>
+        <button className="workspace-switcher">采购与供应链 <ChevronDown size={14} /></button>
+        <div className="app-top-actions"><button aria-label="通知"><Bell size={17} /></button><button aria-label="帮助"><CircleHelp size={17} /></button><button aria-label="用户菜单"><UserCircle size={18} /></button></div>
+      </header>
       <aside className="sidebar">
-        <div className="brand">
-          <strong>OntologyOps</strong>
-          <span>企业数据与智能问数</span>
-        </div>
         <nav aria-label="主导航" className="nav-list">
           {navigation.map(({ to, label, icon: Icon }) => (
             <NavLink className="nav-link" key={to} to={to} end={to === "/"}>
@@ -71,7 +77,6 @@ export function AppShell({ children, role, onRoleChange }: AppShellProps) {
             <span className="eyebrow">OntologyOps / {section}</span>
             <h1>{section}</h1>
           </div>
-          <div className="topbar-status"><span className="status-dot" />本地演示环境</div>
         </header>
         <section className="page-content">{children}</section>
       </main>

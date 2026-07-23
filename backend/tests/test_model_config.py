@@ -85,6 +85,18 @@ def test_selected_real_model_never_falls_back_to_mock_when_key_disappears(tmp_pa
     assert "密钥" in response.json()["detail"]
 
 
+def test_local_secret_is_saved_only_to_ignored_env_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ONTOLOGYOPS_METADATA_PATH", str(tmp_path / "metadata.db"))
+    monkeypatch.setenv("ONTOLOGYOPS_ENV_FILE", str(tmp_path / ".env"))
+    client = TestClient(app)
+    deepseek = next(item for item in client.get("/api/models").json()["providers"] if item["provider"] == "DeepSeek")
+    response = client.put(f"/api/models/{deepseek['id']}/local-secret", headers={"X-Demo-Role": "admin"}, json={"api_key": "secret-value-not-returned"})
+    assert response.status_code == 200
+    assert response.json() == {"secret_ref": "DEEPSEEK_API_KEY", "status": "stored_locally"}
+    assert "secret-value-not-returned" not in str(response.json())
+    assert (tmp_path / ".env").read_text() == "DEEPSEEK_API_KEY=secret-value-not-returned\n"
+
+
 def test_real_compatible_provider_is_used_for_safe_agent_summary(tmp_path, monkeypatch) -> None:
     seed_factory_demo(tmp_path / "data")
     monkeypatch.setenv("ONTOLOGYOPS_DATA_DIR", str(tmp_path / "data"))

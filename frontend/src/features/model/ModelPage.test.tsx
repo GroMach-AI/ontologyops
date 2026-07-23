@@ -8,12 +8,12 @@ const deepseek = { id: "deepseek", provider: "DeepSeek", model_name: "deepseek-v
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("shows DeepSeek Flash and Pro without an API key field", async () => {
+it("shows DeepSeek Flash and Pro with a local-only API key field", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [deepseek] }) }));
   render(<ModelPage role="admin" />);
   expect(await screen.findByRole("option", { name: "DeepSeek V4 Flash" })).toBeInTheDocument();
   expect(screen.getByRole("option", { name: "DeepSeek V4 Pro" })).toBeInTheDocument();
-  expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("API Key")).toHaveAttribute("type", "password");
   expect(screen.getByRole("button", { name: "设为默认" })).toBeDisabled();
 });
 
