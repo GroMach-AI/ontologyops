@@ -62,6 +62,30 @@ def test_verification_uses_env_key_without_returning_it(tmp_path, monkeypatch) -
     assert "not-for-response" not in str(verified.json())
 
 
+def test_verification_can_use_a_transient_key_and_selected_model_without_persisting_it(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ONTOLOGYOPS_METADATA_PATH", str(tmp_path / "metadata.db"))
+    monkeypatch.setenv("ONTOLOGYOPS_ENV_FILE", str(tmp_path / ".env"))
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    client = TestClient(app)
+    deepseek = next(item for item in client.get("/api/models").json()["providers"] if item["provider"] == "DeepSeek")
+
+    class FakeResponse:
+        def raise_for_status(self): pass
+        def json(self): return {"data": [{"id": "deepseek-v4-flash"}, {"id": "deepseek-v4-pro"}]}
+
+    monkeypatch.setattr("app.services.model_provider.httpx.get", lambda *args, **kwargs: FakeResponse())
+    verified = client.post(
+        f"/api/models/{deepseek['id']}/verify",
+        headers={"X-Demo-Role": "admin"},
+        json={"api_key": "transient-key-not-persisted", "model_name": "deepseek-v4-pro"},
+    )
+    assert verified.status_code == 200
+    assert verified.json()["verification_status"] == "verified"
+    assert verified.json()["model_name"] == "deepseek-v4-pro"
+    assert "transient-key-not-persisted" not in str(verified.json())
+    assert not (tmp_path / ".env").exists()
+
+
 def test_selected_real_model_never_falls_back_to_mock_when_key_disappears(tmp_path, monkeypatch) -> None:
     seed_factory_demo(tmp_path / "data")
     monkeypatch.setenv("ONTOLOGYOPS_DATA_DIR", str(tmp_path / "data"))

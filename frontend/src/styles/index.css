@@ -30,3 +30,4 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .key-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }.key-input-row .secondary-button { min-height: 40px; }
 .connection-state.failed { color: #a02c22; }
 .test-result { align-self: center; font-size: 12px; font-weight: 700; white-space: nowrap; }.test-result.passed { color: #087753; }.test-result.failed { color: #a02c22; }
+.model-console { min-height: 380px; }

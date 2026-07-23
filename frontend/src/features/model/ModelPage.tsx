@@ -1,4 +1,4 @@
-import { Check, Plug } from "lucide-react";
+import { Plug } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { DemoRole } from "../../components/AppShell";
@@ -18,6 +18,7 @@ export function ModelPage({ role }: { role: DemoRole }) {
   const [selectedName, setSelectedName] = useState("DeepSeek");
   const [notice, setNotice] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [modelName, setModelName] = useState("");
   const admin = role === "admin";
   const headers = { "Content-Type": "application/json", "X-Demo-Role": role };
   const selected = useMemo(() => providers.find((item) => item.provider === selectedName) ?? providers.find((item) => item.provider === "DeepSeek"), [providers, selectedName]);
@@ -28,36 +29,34 @@ export function ModelPage({ role }: { role: DemoRole }) {
     setProviders((await response.json()).providers.filter((item: Provider) => item.provider !== "Mock Provider"));
   }
   useEffect(() => { void load(); }, [role]);
+  useEffect(() => {
+    if (!selected) return;
+    setModelName(selected.model_name);
+    setApiKey(selected.verification_status === "verified" ? "••••••••••••" : "");
+  }, [selected?.id, selected?.model_name, selected?.verification_status]);
 
   async function verify() {
     if (!selected) return;
     setNotice("正在验证连接…");
-    const response = await fetch(`/api/models/${selected.id}/verify`, { method: "POST", headers, body: JSON.stringify({ api_key: apiKey || null }) });
+    const keyToVerify = apiKey.includes("•") ? null : apiKey || null;
+    const response = await fetch(`/api/models/${selected.id}/verify`, { method: "POST", headers, body: JSON.stringify({ api_key: keyToVerify, model_name: modelName || selected.model_name }) });
     const payload = await response.json();
     if (response.ok && payload.verification_status === "verified") {
-      setProviders((items) => items.map((item) => item.id === payload.id ? payload : item));
-      setNotice("测试通过 · 已连接。现在可以保存配置。");
+      if (keyToVerify) {
+        const secretResponse = await fetch(`/api/models/${selected.id}/local-secret`, { method: "PUT", headers, body: JSON.stringify({ api_key: keyToVerify }) });
+        const secretPayload = await secretResponse.json();
+        if (!secretResponse.ok) { setNotice(secretPayload.detail ?? "保存本机 Key 失败。"); return; }
+      }
+      const saveResponse = await fetch(`/api/models/${selected.id}`, { method: "PATCH", headers, body: JSON.stringify({ enabled: true, is_default: true, model_name: payload.model_name, base_url: payload.base_url, api_key_env: payload.api_key_env, temperature: payload.temperature, max_tokens: payload.max_tokens, agent_enabled: true, modeling_enabled: true }) });
+      const savedPayload = await saveResponse.json();
+      if (!saveResponse.ok) { setNotice(savedPayload.detail ?? "连接已验证，但配置保存失败。"); return; }
+      setProviders((items) => items.map((item) => item.id === savedPayload.id ? savedPayload : item));
+      setApiKey("••••••••••••");
+      setNotice("");
     } else {
       setProviders((items) => items.map((item) => item.id === payload.id ? payload : item));
       setNotice(payload.last_error ?? payload.detail ?? "连接验证失败。");
     }
-  }
-  async function saveConfiguration() {
-    if (!selected) return;
-    if (apiKey) {
-      const secretResponse = await fetch(`/api/models/${selected.id}/local-secret`, { method: "PUT", headers, body: JSON.stringify({ api_key: apiKey }) });
-      const secretPayload = await secretResponse.json();
-      if (!secretResponse.ok) { setNotice(secretPayload.detail ?? "保存本机 Key 失败。"); return; }
-    }
-    await save(selected.model_name, true);
-    setApiKey("");
-  }
-  async function save(modelName: string, asDefault = false) {
-    if (!selected) return;
-    const response = await fetch(`/api/models/${selected.id}`, { method: "PATCH", headers, body: JSON.stringify({ enabled: asDefault, is_default: asDefault, model_name: modelName, base_url: selected.base_url, api_key_env: selected.api_key_env, temperature: selected.temperature, max_tokens: selected.max_tokens, agent_enabled: true, modeling_enabled: true }) });
-    const payload = await response.json();
-    setNotice(response.ok ? (asDefault ? "已设为默认模型。" : "模型选择已保存；请重新测试连接。") : payload.detail ?? "保存失败。");
-    await load();
   }
 
   if (!admin) return <div className="panel"><h3>模型配置仅对管理员开放</h3><p className="muted">当前角色无法读取或调整本机模型配置。</p></div>;
@@ -75,11 +74,9 @@ export function ModelPage({ role }: { role: DemoRole }) {
       <section className="model-form">
         {selected ? <>
           <div className="model-form-title"><span className="model-icon">{selected.provider === "DeepSeek" ? <img src="https://cdn.simpleicons.org/deepseek/4D6BFE" alt="" /> : selected.provider === "GPT" ? <i className="ph ph-open-ai-logo" aria-hidden="true" /> : <Plug size={18} />}</span><h3>{selected.provider}</h3></div>
-          <label className="form-field"><span>模型</span><select aria-label="选择模型" value={selected.model_name} onChange={(event) => void save(event.target.value)}>{options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-          <label className="form-field"><span>API Key</span><div className="key-input-row"><input aria-label="API Key" type="password" value={apiKey} placeholder="请输入 API Key" onChange={(event) => setApiKey(event.target.value)} /><button className="secondary-button" onClick={() => void verify()}>测试连接</button>{selected.verification_status === "verified" ? <span className="test-result passed">测试通过</span> : selected.verification_status === "failed" ? <span className="test-result failed">测试失败</span> : null}</div></label>
+          <label className="form-field"><span>模型</span><select aria-label="选择模型" value={modelName || selected.model_name} onChange={(event) => setModelName(event.target.value)}>{options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          <label className="form-field"><span>API Key</span><div className="key-input-row"><input aria-label="API Key" type="password" value={apiKey} placeholder="请输入 API Key" onFocus={() => { if (apiKey.includes("•")) setApiKey(""); }} onChange={(event) => setApiKey(event.target.value)} /><button className="secondary-button" onClick={() => void verify()}>测试连接</button>{selected.verification_status === "verified" ? <span className="test-result passed">测试通过</span> : selected.verification_status === "failed" ? <span className="test-result failed">测试失败</span> : null}</div></label>
           <label className="form-field"><span>Base URL</span><input readOnly value={selected.base_url ?? "未配置"} /></label>
-          <div className="model-actions"><button className="primary-button" disabled={selected.verification_status !== "verified"} onClick={() => void saveConfiguration()}><Check size={15} />保存配置</button></div>
-          {selected.verification_status === "verified" ? <p className="connection-state verified">已连接</p> : selected.verification_status === "failed" ? <p className="connection-state failed">{selected.last_error}</p> : null}
         </> : <p className="muted">此 Provider 尚未配置。MVP 当前只允许 DeepSeek、GPT 与明确测试用 Mock。</p>}
       </section>
     </div>

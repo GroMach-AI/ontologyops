@@ -46,6 +46,7 @@ class LocalSecretRequest(BaseModel):
 
 class VerifyModelRequest(BaseModel):
     api_key: str | None = Field(default=None, min_length=8, max_length=1024)
+    model_name: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 def _ensure_defaults() -> list[ModelProviderConfig]:
@@ -198,6 +199,8 @@ def verify_model(provider_id: str, request: VerifyModelRequest | None = None, x_
             item.last_verified_at = datetime.now(UTC)
             success, error = True, None
         else:
+            if request and request.model_name:
+                item.model_name = request.model_name
             success, error = ModelProviderService(engine).verify(item, request.api_key if request else None)
             item.verification_status = "verified" if success else "failed"
             item.last_error = error
