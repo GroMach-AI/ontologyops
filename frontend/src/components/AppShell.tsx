@@ -58,13 +58,13 @@ export function AppShell({ children, role, onRoleChange, ontologies }: AppShellP
         </div>
         <div className="oo-switcher">
           <button
-            className="oo-workspace-switcher" type="button"
+            className={"oo-workspace-switcher" + (menuOpen ? " is-open" : "")} type="button"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((value) => !value)}
             style={!currentOntology ? { color: "oklch(0.58 0.04 155)" } : undefined}
           >
             <span>{switcherLabel}</span>
-            <i className={"ph " + (currentOntology ? "ph-caret-down" : "ph-plus")} aria-hidden="true" />
+            <i className={"ph " + (currentOntology ? (menuOpen ? "ph-caret-up" : "ph-caret-down") : "ph-plus")} aria-hidden="true" />
           </button>
           {menuOpen ? (
             <div className="oo-ontology-menu" role="menu">
