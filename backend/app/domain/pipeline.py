@@ -128,6 +128,11 @@ class PipelineService:
         source_id = str(uuid4())
         source_path = self.upload_dir / f"{source_id}-{_safe_filename(filename)}"
         source_path.write_bytes(content)
+        dataframe = self._read_dataframe(source_path, kind)
+        dataset_id = str(uuid4())
+        dataset_path = self.dataset_dir / f"{dataset_id}-profiled.parquet"
+        _write_dataframe_parquet(dataframe, dataset_path)
+        profile = _profile_dataframe(dataframe)
         with Session(engine) as session:
             session.add(
                 DataSource(
@@ -137,8 +142,23 @@ class PipelineService:
                     config_json=json.dumps({"path": str(source_path), "pipeline_id": source_id}),
                 )
             )
+            session.add(
+                Dataset(
+                    id=dataset_id,
+                    source_id=source_id,
+                    stage="profiled",
+                    schema_json=json.dumps({"columns": profile}, ensure_ascii=False),
+                    parquet_path=str(dataset_path),
+                )
+            )
             session.commit()
-        return {"source_id": source_id, "pipeline_id": source_id, "status": "ready"}
+        return {
+            "source_id": source_id,
+            "pipeline_id": source_id,
+            "dataset_version_id": dataset_id,
+            "lifecycle_status": "profiled",
+            "profile": profile,
+        }
 
     def run_registered_pipeline(
         self,
@@ -384,6 +404,25 @@ def _transform_summary(transforms: list[dict[str, object]]) -> str:
 def _dataframe_preview(dataframe: pd.DataFrame) -> dict[str, object]:
     rows = dataframe.head(20).where(pd.notnull(dataframe.head(20)), None).to_dict(orient="records")
     return {"columns": list(dataframe.columns), "rows": rows, "row_count": len(dataframe)}
+
+
+def _profile_dataframe(dataframe: pd.DataFrame) -> list[dict[str, object]]:
+    """Return a bounded, serialisable column profile for a DatasetVersion."""
+    profile: list[dict[str, object]] = []
+    for column in dataframe.columns:
+        series = dataframe[column]
+        non_null = series.dropna()
+        total = len(series)
+        profile.append(
+            {
+                "name": str(column),
+                "type": str(series.dtype),
+                "unique_count": int(non_null.nunique()),
+                "null_percent": round((total - len(non_null)) / max(total, 1) * 100, 1),
+                "samples": [str(value) for value in non_null.head(5).tolist()],
+            }
+        )
+    return profile
 
 
 def _write_dataframe_parquet(dataframe: pd.DataFrame, path: Path) -> None:

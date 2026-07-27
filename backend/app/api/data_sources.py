@@ -78,6 +78,8 @@ def preview_dataset(dataset_id: str) -> dict[str, object]:
         if dataset is None:
             raise HTTPException(status_code=404, detail="Dataset not found")
         parquet_path = dataset.parquet_path
+        lifecycle_status = dataset.stage
+        schema = json.loads(dataset.schema_json)
     connection = duckdb.connect()
     try:
         escaped_path = parquet_path.replace("'", "''")
@@ -86,7 +88,14 @@ def preview_dataset(dataset_id: str) -> dict[str, object]:
         rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
     finally:
         connection.close()
-    return {"dataset_id": dataset_id, "columns": columns, "rows": rows}
+    profile_columns = schema.get("columns", columns)
+    return {
+        "dataset_version_id": dataset_id,
+        "lifecycle_status": lifecycle_status,
+        "columns": profile_columns,
+        "rows": rows,
+        "row_count": len(rows),
+    }
 
 
 @router.post("/mysql/test")
