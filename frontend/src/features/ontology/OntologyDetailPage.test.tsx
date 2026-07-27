@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OntologyDetailPage } from "./OntologyDetailPage";
 import type { Ontology } from "./OntologyPage";
@@ -52,14 +52,44 @@ const ontology: Ontology = {
 };
 
 describe("OntologyDetailPage", () => {
-  it("shows ontology overview, entities, relationships and publishes the draft", async () => {
-    const user = userEvent.setup();
-    const onUpdate = vi.fn();
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+  it("blocks publication when the API reports an untrusted mapping", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        valid: false,
+        blockers: [{ code: "mapping_dataset_not_trusted", message: "供应商数据集尚未可信" }],
+      }),
+    }));
+    const blocked = { ...ontology, draftId: "draft-1" };
 
     render(
       <MemoryRouter initialEntries={["/ontology/onto-manufacturing"]}>
         <Routes>
-          <Route path="/ontology/:id" element={<OntologyDetailPage role="modeler" ontologies={[ontology]} onUpdate={onUpdate} />} />
+          <Route path="/ontology/:id" element={<OntologyDetailPage role="modeler" ontologies={[blocked]} onUpdate={() => undefined} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("供应商数据集尚未可信")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /发布版本/ })).toBeDisabled();
+  });
+
+  it("shows ontology overview, entities, relationships and publishes the draft", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ valid: true, blockers: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ release_id: "release-1", semantic_version: "v1" }) }));
+    const publishable = { ...ontology, draftId: "draft-2" };
+
+    render(
+      <MemoryRouter initialEntries={["/ontology/onto-manufacturing"]}>
+        <Routes>
+          <Route path="/ontology/:id" element={<OntologyDetailPage role="modeler" ontologies={[publishable]} onUpdate={onUpdate} />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -68,8 +98,9 @@ describe("OntologyDetailPage", () => {
     expect(screen.getAllByText("客户").length).toBeGreaterThan(0);
     expect(screen.getByText("customer_id")).toBeInTheDocument();
 
+    await waitFor(() => expect(screen.getByRole("button", { name: /发布版本/ })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: /发布版本/ }));
-    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "published", version: "1.0" }));
-    expect(screen.getByText(/版本 1.0 已发布/)).toBeInTheDocument();
+    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "published", version: "1", releaseId: "release-1" }));
+    expect(screen.getByText(/版本 v1 已发布/)).toBeInTheDocument();
   });
 });

@@ -19,6 +19,7 @@ export type OntologyRelationship = {
 export type Ontology = {
   id: string; name: string; scope: string;
   status: "draft" | "published"; version: string;
+  draftId?: string; releaseId?: string;
   objects: number; links: number; rules: number; updated: string;
   entities: OntologyEntity[];
   relationships: OntologyRelationship[];

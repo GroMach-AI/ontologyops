@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import type { DemoRole } from "../../components/AppShell";
@@ -11,6 +11,11 @@ type OntologyDetailPageProps = {
   role: DemoRole;
   ontologies: Ontology[];
   onUpdate: (ontology: Ontology) => void;
+};
+
+type DraftValidation = {
+  valid: boolean;
+  blockers: Array<{ code: string; message: string }>;
 };
 
 const tabLabels: Array<{ id: DetailTab; label: string; icon: string }> = [
@@ -35,7 +40,24 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
   const [activeTab, setActiveTab] = useState<DetailTab>("graph");
   const [selectedEntityName, setSelectedEntityName] = useState("");
   const [notice, setNotice] = useState("");
+  const [validation, setValidation] = useState<DraftValidation | null>(null);
+  const [validationLoading, setValidationLoading] = useState(false);
   const editable = role === "admin" || role === "modeler";
+
+  useEffect(() => {
+    if (!ontology?.draftId || ontology.status !== "draft") return;
+    let current = true;
+    setValidationLoading(true);
+    void fetch(`/api/ontology-drafts/${ontology.draftId}/validate`, { method: "POST" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("无法校验草稿");
+        return response.json() as Promise<DraftValidation>;
+      })
+      .then((result) => { if (current) setValidation(result); })
+      .catch(() => { if (current) setValidation({ valid: false, blockers: [{ code: "validation_unavailable", message: "无法完成发布校验。" }] }); })
+      .finally(() => { if (current) setValidationLoading(false); });
+    return () => { current = false; };
+  }, [ontology?.draftId, ontology?.status]);
 
   if (!ontology) {
     return (
@@ -51,30 +73,17 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
   }
 
   async function publishOntology() {
-    if (!ontology) return;
-    const published = { ...ontology, status: "published" as const, version: "1.0", updated: "刚刚" };
-    // 先更新本地状态（立即可见），再持久化到后端（刷新不丢）
-    onUpdate(published);
-    setNotice("版本 1.0 已发布，本体现在可供应用层使用。");
+    if (!ontology?.draftId || !validation?.valid) return;
     try {
-      await fetch("/api/ontology-drafts/list", {
+      const response = await fetch(`/api/ontology-drafts/${ontology.draftId}/publish`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: published.id,
-          name: published.name,
-          scope: published.scope,
-          status: published.status,
-          version: published.version,
-          objects: published.objects,
-          links: published.links,
-          rules: published.rules,
-          entities: published.entities,
-          relationships: published.relationships,
-        }),
       });
+      if (!response.ok) throw new Error("发布失败");
+      const result = await response.json() as { release_id: string; semantic_version: string };
+      onUpdate({ ...ontology, status: "published", version: result.semantic_version.replace(/^v/, ""), releaseId: result.release_id, updated: "刚刚" });
+      setNotice(`版本 ${result.semantic_version} 已发布，本体现在可供应用层使用。`);
     } catch {
-      /* persistence failure is non-blocking */
+      setNotice("发布失败，请先检查草稿校验结果。");
     }
   }
 
@@ -114,12 +123,19 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
             <i className="ph ph-pencil-simple" aria-hidden="true" />编辑草稿
           </button>
           {editable && ontology.status === "draft" ? (
-            <button className="oo-primary-button" type="button" onClick={publishOntology}>
+            <button className="oo-primary-button" type="button" onClick={publishOntology} disabled={validationLoading || validation?.valid !== true}>
               <i className="ph ph-paper-plane-tilt" aria-hidden="true" />发布版本
             </button>
           ) : null}
         </div>
       </section>
+
+      {ontology.status === "draft" && validation?.blockers.length ? (
+        <div className="oo-notice" role="status">
+          <i className="ph ph-warning-circle" aria-hidden="true" />
+          <span>{validation.blockers.map((blocker) => blocker.message).join(" ")}</span>
+        </div>
+      ) : null}
 
       <nav className="oo-detail-tabs" aria-label="本体详情导航">
         {tabLabels.map((tab) => (
