@@ -1,677 +1,225 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DemoRole } from "../../components/AppShell";
-import type { Ontology } from "../ontology/OntologyPage";
+import type { Ontology, OntologyProperty } from "../ontology/OntologyPage";
 
-/* ====== Types ====== */
-type Source = { id: string; name: string; kind: string; pipeline_id: string | null; dataset: { id: string; stage: string } | null };
-type ColumnProfile = { name: string; type: string; unique_count: number; null_percent: number; samples: string[] };
-type RenameEntry = { from: string; to: string };
-type CastEntry = { field: string; target: string };
-type MappingEntry = { field: string; entity: string; property: string };
+type Source = { id: string; name: string; kind: string; pipeline_id: string; dataset: { id: string; stage: string; schema?: string } | null };
+type DatasetColumn = string | { name: string; type?: string; unique_count?: number; null_percent?: number };
+type DatasetPreview = { dataset_version_id: string; lifecycle_status: string; columns: DatasetColumn[]; rows: Array<Record<string, unknown>>; row_count: number };
+type NodeKind = "connection" | "storage" | "quality" | "mapping";
+type NodePosition = { x: number; y: number };
 
-const STEPS = [
-  { id: 0, label: "数据连接", desc: "上传 csv / excel 文件，登记数据源" },
-  { id: 1, label: "数据存储", desc: "确认 schema 并在本地存储中注册数据集版本" },
-  { id: 2, label: "数据预处理", desc: "程序清洗 · LLM 推荐类型转换与重命名" },
-  { id: 3, label: "本体映射", desc: "LLM 推荐字段 → 属性映射 · 人工确认" },
-] as const;
+const initialPositions: Record<NodeKind, NodePosition> = {
+  connection: { x: 140, y: 196 }, storage: { x: 410, y: 196 }, quality: { x: 680, y: 196 }, mapping: { x: 950, y: 196 },
+};
+const NODE_SIZE = { width: 196, height: 170 };
 
-type PreprocTab = "dedup" | "rename" | "cast";
+const controlledFieldAliases: Record<string, string[]> = {
+  sales_order_id: ["sales_order_no", "sales_order_code", "order_no", "order_id"],
+  customer_id: ["customer_code", "customer_no"],
+  product_id: ["product_code", "product_no", "material_code"],
+  ordered_qty: ["quantity", "order_qty", "ordered_quantity"],
+  fulfillment_mode: ["fulfillment_status", "fulfillment_type", "delivery_mode"],
+  supplier_id: ["supplier_code", "supplier_no"],
+  supplier_name: ["name"],
+};
 
-/* ====== Component ====== */
+export function suggestFieldMappings(properties: OntologyProperty[], sourceColumns: string[]): Record<string, string> {
+  const byNormalizedName = new Map(sourceColumns.map((column) => [column.trim().toLowerCase(), column]));
+  return Object.fromEntries(properties.flatMap((property) => {
+    const candidates = [property.name, ...(controlledFieldAliases[property.name] ?? [])];
+    const matched = candidates.map((candidate) => byNormalizedName.get(candidate.trim().toLowerCase())).find(Boolean);
+    return matched ? [[property.name, matched]] : [];
+  }));
+}
+
+export function datasetColumnNames(columns: DatasetColumn[]): string[] {
+  return columns.flatMap((column) => typeof column === "string" ? [column] : column.name ? [column.name] : []);
+}
+
+function horizontalPositions(canvasWidth: number): Record<NodeKind, NodePosition> {
+  const width = Math.max(1100, canvasWidth);
+  const gap = 76;
+  const flowWidth = NODE_SIZE.width * 4 + gap * 3;
+  const sidePadding = Math.max(56, (width - flowWidth) / 2);
+  return {
+    connection: { x: sidePadding, y: 196 },
+    storage: { x: sidePadding + (NODE_SIZE.width + gap), y: 196 },
+    quality: { x: sidePadding + (NODE_SIZE.width + gap) * 2, y: 196 },
+    mapping: { x: sidePadding + (NODE_SIZE.width + gap) * 3, y: 196 },
+  };
+}
+
+const nodeCopy: Record<NodeKind, { label: string; icon: string }> = {
+  connection: { label: "数据连接", icon: "ph-file-csv" }, storage: { label: "数据存储", icon: "ph-database" }, quality: { label: "数据清洗与质量", icon: "ph-broom" }, mapping: { label: "本体映射", icon: "ph-share-network" },
+};
+
 export function PipelinePage({ role }: { role: DemoRole }) {
   const editable = role === "admin" || role === "modeler";
-
-  /* step */
-  const [activeStep, setActiveStep] = useState(0);
-  const [notice, setNotice] = useState("");
-
-  /* step 1 - 数据连接 */
+  const inputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ kind: NodeKind; startX: number; startY: number; origin: NodePosition } | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-
-  /* step 2 - 数据存储 */
-  const [previewCols, setPreviewCols] = useState<ColumnProfile[]>([]);
-  const [previewRows, setPreviewRows] = useState(0);
-  const [selectedFile, setSelectedFile] = useState("");
-  const [datasetRegistered, setDatasetRegistered] = useState(false);
-
-  /* step 3 - 数据预处理 */
-  const [preprocTab, setPreprocTab] = useState<PreprocTab>("dedup");
-  const [dedupKeys, setDedupKeys] = useState<string[]>(["customer_id"]);
-  const [renames, setRenames] = useState<RenameEntry[]>([]);
-  const [casts, setCasts] = useState<CastEntry[]>([]);
-  /* llm suggestions */
-  const [llmRenames, setLlmRenames] = useState<RenameEntry[]>([]);
-  const [llmCasts, setLlmCasts] = useState<CastEntry[]>([]);
-  const [llmLoading, setLlmLoading] = useState(false);
-
-  /* step 4 - 本体映射 */
+  const [selectedSourceId, setSelectedSourceId] = useState("");
+  const [selectedNode, setSelectedNode] = useState<NodeKind>("connection");
+  const [positions, setPositions] = useState(initialPositions);
+  const [preview, setPreview] = useState<DatasetPreview | null>(null);
+  const [run, setRun] = useState<{ id: string; dataset_id: string; output_rows: number } | null>(null);
+  const [trustedDatasetId, setTrustedDatasetId] = useState("");
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
-  const [targetOntology, setTargetOntology] = useState<string>("");
-  const [mappings, setMappings] = useState<MappingEntry[]>([]);
-  const [llmMappings, setLlmMappings] = useState<MappingEntry[]>([]);
+  const [ontologyId, setOntologyId] = useState("");
+  const [entityId, setEntityId] = useState("");
+  const [mappingResult, setMappingResult] = useState<{ written_count: number; total_count: number } | null>(null);
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [draggingFiles, setDraggingFiles] = useState(false);
 
-  /* ---- data fetching ---- */
+  const selectedSource = sources.find((source) => source.id === selectedSourceId) ?? null;
+  const selectedOntology = ontologies.find((ontology) => ontology.id === ontologyId) ?? null;
+  const selectedEntity = selectedOntology?.entities.find((entity) => entity.name === entityId) ?? null;
+  const previewColumnNames = useMemo(() => datasetColumnNames(preview?.columns ?? []), [preview]);
+  const primaryField = useMemo(() => previewColumnNames.find((column) => /sales_order_no|order_id|订单号/i.test(column)) ?? previewColumnNames[0] ?? "", [previewColumnNames]);
+  const suggestedFieldMappings = useMemo(
+    () => suggestFieldMappings(selectedEntity?.properties ?? [], previewColumnNames),
+    [selectedEntity, previewColumnNames],
+  );
+  const primaryKeyProperty = selectedEntity?.properties.find((property) => property.is_key);
+  const primaryKeySource = primaryKeyProperty ? suggestedFieldMappings[primaryKeyProperty.name] : primaryField;
+  const activeTrustedDatasetId = trustedDatasetId || (selectedSource?.dataset?.stage === "trusted" ? selectedSource.dataset.id : "");
+
   const loadSources = useCallback(async () => {
-    const res = await fetch("/api/sources");
-    if (res.ok) setSources((await res.json()).sources);
+    const response = await fetch("/api/sources");
+    if (!response.ok) return;
+    const body = await response.json() as { sources: Source[] };
+    setSources(body.sources);
+    setSelectedSourceId((current) => current || body.sources[0]?.id || "");
   }, []);
 
   useEffect(() => { void loadSources(); }, [loadSources]);
-
-  /* ---- step 1: upload ---- */
-  async function uploadFile(file: File) {
-    setUploading(true);
-    setNotice(`正在登记 ${file.name}...`);
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      const res = await fetch("/api/sources/upload", { method: "POST", headers: { "X-Demo-Role": role }, body: form });
-      const body = await res.json();
-      if (!res.ok) { setNotice(body.detail ?? "导入失败"); return; }
-      setNotice("数据源已登记。可进入下一步确认存储。");
-      await loadSources();
-    } catch { setNotice("上传请求失败"); }
-    finally { setUploading(false); }
-  }
-
-  /* ---- step 2: preview ---- */
-  async function previewSource(source: Source) {
-    setSelectedFile(source.name);
-    if (!source.dataset?.id) {
-      setPreviewCols([]);
-      setPreviewRows(0);
-      setNotice("该数据源暂无数据集，请先通过本体创建的 profiling 获得字段信息。");
-      return;
-    }
-    try {
-      const res = await fetch(`/api/datasets/${source.dataset.id}/preview`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setPreviewCols(data.columns ?? []);
-      setPreviewRows(data.row_count ?? 0);
-    } catch {
-      setNotice("无法获取数据集预览。");
-    }
-  }
-
-  function registerDataset() {
-    setDatasetRegistered(true);
-    setNotice("数据集版本已注册，可进入预处理。");
-    setActiveStep(2);
-  }
-
-  /* ---- step 3: llm suggestions ---- */
-  async function loadLlmSuggestions() {
-    if (llmRenames.length > 0 || llmCasts.length > 0) return;
-    setLlmLoading(true);
-    try {
-      const res = await fetch("/api/ontology-drafts/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          draft: { name: "preproc", scope: "数据预处理" },
-          profiling: { details: [] },
-          links_detected: [],
-        }),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const text = (data.analysis ?? "") as string;
-      let parsed: { suggestions?: { rename?: RenameEntry[]; cast?: CastEntry[] } } = {};
-      try {
-        const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        const start = cleaned.indexOf("{");
-        const end = cleaned.lastIndexOf("}");
-        if (start >= 0 && end > start) parsed = JSON.parse(cleaned.slice(start, end + 1));
-      } catch { /* ignore parse errors */ }
-      if (parsed.suggestions?.rename?.length) setLlmRenames(parsed.suggestions.rename);
-      if (parsed.suggestions?.cast?.length) setLlmCasts(parsed.suggestions.cast);
-    } finally { setLlmLoading(false); }
-  }
-
-  useEffect(() => { if (activeStep === 2) void loadLlmSuggestions(); }, [activeStep]);
-
-  /* ---- step 4: load ontologies & llm mapping ---- */
   useEffect(() => {
-    if (activeStep !== 3) return;
-    (async () => {
-      try {
-        const res = await fetch("/api/v1/resources?type=ResourceDefinition");
-        if (res.ok) {
-          const data = await res.json();
-          setOntologies(data.resources ?? []);
-        }
-      } catch { /* ignore */ }
+    const arrangeNodes = () => setPositions(horizontalPositions(canvasRef.current?.clientWidth ?? 1100));
+    arrangeNodes();
+    window.addEventListener("resize", arrangeNodes);
+    return () => window.removeEventListener("resize", arrangeNodes);
+  }, []);
+  useEffect(() => {
+    if (selectedNode !== "mapping" || ontologies.length) return;
+    void (async () => {
+      const response = await fetch("/api/ontology-drafts/list");
+      if (!response.ok) return;
+      const body = await response.json() as { ontologies: Ontology[] };
+      const published = body.ontologies.filter((ontology) => ontology.status === "published");
+      setOntologies(published);
+      setOntologyId((current) => current || published[0]?.id || "");
     })();
-  }, [activeStep]);
+  }, [selectedNode, ontologies.length]);
+  useEffect(() => {
+    setEntityId((current) => current || selectedOntology?.entities[0]?.name || "");
+  }, [selectedOntology]);
+  useEffect(() => {
+    if (!selectedSource?.dataset?.id) { setPreview(null); return; }
+    void (async () => {
+      const response = await fetch(`/api/datasets/${selectedSource.dataset?.id}/preview`);
+      if (response.ok) setPreview(await response.json() as DatasetPreview);
+    })();
+  }, [selectedSource?.dataset?.id]);
+  useEffect(() => {
+    if (!selectedOntology || !previewColumnNames.length) return;
+    const ranked = selectedOntology.entities
+      .map((entity) => ({ entity, score: Object.keys(suggestFieldMappings(entity.properties, previewColumnNames)).length }))
+      .sort((left, right) => right.score - left.score);
+    if (ranked[0]?.score > 0) setEntityId(ranked[0].entity.name);
+  }, [selectedOntology, previewColumnNames]);
 
-  /* ====== render ====== */
-  return (
-    <div>
-      {notice ? (
-        <div className="oo-notice" style={{ marginBottom: 20 }}>
-          <i className="ph ph-info" />
-          <span>{notice}</span>
-          <button className="oo-notice-close" type="button" onClick={() => setNotice("")}><i className="ph ph-x" /></button>
+  async function uploadCsvFiles(files: File[]) {
+    if (!files.length) return;
+    if (files.some((file) => !file.name.toLowerCase().endsWith(".csv"))) { setNotice("本期仅支持 CSV 文件。"); return; }
+    setBusy(true); setNotice("");
+    try {
+      const uploaded = [] as Array<{ source_id: string }>;
+      for (const file of files) {
+        const form = new FormData(); form.append("file", file);
+        const response = await fetch("/api/sources/upload", { method: "POST", headers: { "X-Demo-Role": role }, body: form });
+        const body = await response.json();
+        if (!response.ok) throw new Error(`${file.name}：${body.detail || "上传失败"}`);
+        uploaded.push(body as { source_id: string });
+      }
+      await loadSources();
+      setSelectedSourceId(uploaded[0].source_id);
+      setSelectedNode("storage");
+      setNotice(files.length === 1 ? "CSV 已连接，原始数据集和字段画像已创建。" : `已连接 ${files.length} 个 CSV 文件；每个文件均已创建独立的数据源和原始数据集。`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "上传失败"); } finally { setBusy(false); }
+  }
+
+  async function runQualityPipeline() {
+    if (!selectedSource) { setNotice("请先上传并选择一个 CSV 文件。"); return; }
+    setBusy(true); setNotice("");
+    try {
+      const runResponse = await fetch(`/api/pipelines/${selectedSource.pipeline_id}/run`, { method: "POST", headers: { "Content-Type": "application/json", "X-Demo-Role": role }, body: JSON.stringify({ transforms: [] }) });
+      const runBody = await runResponse.json(); if (!runResponse.ok) throw new Error(runBody.detail || "管道运行失败");
+      setRun(runBody); const field = primaryField; if (!field) throw new Error("没有可用于质量检查的字段");
+      const qualityResponse = await fetch(`/api/datasets/${runBody.dataset_id}/quality-check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ unique_fields: [field] }) });
+      const qualityBody = await qualityResponse.json(); if (!qualityResponse.ok) throw new Error(qualityBody.detail || "质量检查失败");
+      if (qualityBody.status !== "pass") { setNotice("质量检查未通过，不能用于本体映射。请修复重复值后重新运行。"); return; }
+      const trustResponse = await fetch(`/api/datasets/${runBody.dataset_id}/trust`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision: "trusted", reason: `${field} 唯一性检查通过` }) });
+      const trustBody = await trustResponse.json(); if (!trustResponse.ok) throw new Error(trustBody.detail || "可信决策失败");
+      setTrustedDatasetId(runBody.dataset_id); setSelectedNode("mapping"); setNotice(`清洗与质量通过，生成 ${runBody.output_rows} 行可信数据集。`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "运行失败"); } finally { setBusy(false); }
+  }
+
+  async function materialize() {
+    if (!selectedSource || !selectedEntity || !activeTrustedDatasetId || !primaryField) { setNotice("请先完成可信数据集和实体类型选择。"); return; }
+    const fieldMappings = suggestedFieldMappings;
+    if (!primaryKeySource) { setNotice(`未能为实体主键 ${primaryKeyProperty?.name || ""} 找到 CSV 字段候选。`); return; }
+    setBusy(true); setNotice("");
+    try {
+      const response = await fetch(`/api/pipelines/${selectedSource.pipeline_id}/materialize`, { method: "POST", headers: { "Content-Type": "application/json", "X-Demo-Role": role }, body: JSON.stringify({ dataset_id: activeTrustedDatasetId, ontology_id: ontologyId, entity_id: selectedEntity.name, primary_key_field: primaryKeySource, field_mappings: fieldMappings }) });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "本体映射失败");
+      setMappingResult(body); setNotice(`映射通过：已写入 ${body.written_count} 条实体实例。`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "映射失败"); } finally { setBusy(false); }
+  }
+
+  function startDrag(kind: NodeKind, event: React.PointerEvent<HTMLButtonElement>) {
+    if (!editable) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = { kind, startX: event.clientX, startY: event.clientY, origin: positions[kind] };
+  }
+  function drag(event: React.PointerEvent<HTMLButtonElement>) {
+    const active = dragRef.current; if (!active) return;
+    const maxX = Math.max(12, (canvasRef.current?.clientWidth ?? 1100) - NODE_SIZE.width - 12);
+    const maxY = Math.max(24, (canvasRef.current?.clientHeight ?? 564) - NODE_SIZE.height - 18);
+    setPositions((current) => ({ ...current, [active.kind]: { x: Math.max(12, Math.min(maxX, active.origin.x + event.clientX - active.startX)), y: Math.max(24, Math.min(maxY, active.origin.y + event.clientY - active.startY)) } }));
+  }
+  function stopDrag() { dragRef.current = null; }
+
+  const nodeMeta = (kind: NodeKind) => {
+    if (kind === "connection") return { title: selectedSource?.name || "上传 CSV 文件", desc: selectedSource ? "CSV 已连接，可查看字段画像与来源证据。" : "第一步，选择本地 CSV 文件并建立数据连接。", badge: selectedSource ? "已连接" : "待上传" };
+    if (kind === "storage") return { title: selectedSource?.dataset?.id ? "原始数据集版本" : "等待数据连接", desc: selectedSource?.dataset?.id ? `数据集 ${selectedSource.dataset.id}，schema 与文件指纹已保存。` : "上传 CSV 后由系统自动创建数据集版本。", badge: selectedSource?.dataset?.id ? "已注册" : "待创建" };
+    if (kind === "quality") return { title: "清洗与质量", desc: activeTrustedDatasetId ? "已生成可信数据集，可进入本体映射。" : "确定性清洗与质量规则在运行时执行。", badge: activeTrustedDatasetId ? "已可信" : "待运行" };
+    return { title: selectedEntity ? `${selectedEntity.label || selectedEntity.name} · ${selectedEntity.name}` : "选择实体类型", desc: mappingResult ? `已写入 ${mappingResult.total_count} 条实体实例。` : selectedEntity ? "已生成字段映射候选，请确认后填充实体数据。" : "仅选择已发布本体中的实体类型。", badge: mappingResult ? "已写入" : selectedEntity ? "待确认" : "待映射" };
+  };
+  const active = nodeMeta(selectedNode);
+
+  return <div className="oo-pipeline-page">
+    <div className="oo-pipeline-heading"><div><h1>销售订单履约</h1><div className="oo-heading-meta"><span>草稿</span><span>·</span><span>目标：已发布本体</span></div></div></div>
+    {notice ? <div className="oo-notice oo-pipeline-notice"><i className="ph ph-info" /><span>{notice}</span><button type="button" className="oo-notice-close" onClick={() => setNotice("")}><i className="ph ph-x" /></button></div> : null}
+    <div className="oo-pipeline-workspace">
+      <section className="oo-pipeline-canvas-shell">
+        <div className="oo-pipeline-canvas" ref={canvasRef} aria-label="数据管道画布">
+          <svg className="oo-pipeline-edges" aria-hidden="true"><defs><marker id="pipeline-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L7,4 L0,8 z" /></marker></defs>{([ ["connection", "storage", "注册版本"], ["storage", "quality", "清洗输入"], ["quality", "mapping", "可信映射"] ] as const).map(([from, to, label]) => { const a = positions[from]; const b = positions[to]; const fromCenter = { x: a.x + NODE_SIZE.width / 2, y: a.y + NODE_SIZE.height / 2 }; const toCenter = { x: b.x + NODE_SIZE.width / 2, y: b.y + NODE_SIZE.height / 2 }; const dx = toCenter.x - fromCenter.x; const dy = toCenter.y - fromCenter.y; const scale = 1 / Math.max(Math.abs(dx) / (NODE_SIZE.width / 2), Math.abs(dy) / (NODE_SIZE.height / 2)); const start = { x: fromCenter.x + dx * scale, y: fromCenter.y + dy * scale }; const end = { x: toCenter.x - dx * scale, y: toCenter.y - dy * scale }; return <g key={label}><line x1={start.x} y1={start.y} x2={end.x} y2={end.y} markerEnd="url(#pipeline-arrow)" /><text x={(start.x + end.x) / 2} y={(start.y + end.y) / 2 - 9}>{label}</text></g>; })}</svg>
+          {(Object.keys(nodeCopy) as NodeKind[]).map((kind) => { const meta = nodeMeta(kind); return <button key={kind} type="button" aria-label={nodeCopy[kind].label} className={`oo-pipeline-node ${selectedNode === kind ? "is-selected" : ""}`} style={{ left: positions[kind].x, top: positions[kind].y }} onClick={() => setSelectedNode(kind)} onPointerDown={(event) => startDrag(kind, event)} onPointerMove={drag} onPointerUp={stopDrag} onPointerCancel={stopDrag}><span className="oo-pipeline-node-kind"><i className={`ph ${nodeCopy[kind].icon}`} />{nodeCopy[kind].label}</span><strong>{meta.title}</strong><small>{meta.desc}</small><footer><code>{kind === "connection" ? selectedSource?.id?.slice(0, 8) || "CSV" : kind === "storage" ? selectedSource?.dataset?.id?.slice(0, 8) || "dataset" : kind === "quality" ? run?.id?.slice(0, 8) || "rule" : selectedEntity?.name || "entity"}</code><span className={`oo-badge ${meta.badge.includes("已") ? "oo-badge-ok" : "oo-badge-draft"}`}>{meta.badge}</span></footer></button>; })}
+          {!selectedSource ? <button type="button" className="oo-pipeline-upload-empty" onClick={() => inputRef.current?.click()}><i className="ph ph-file-arrow-up" />上传 CSV 文件</button> : null}
+          <div className="oo-pipeline-canvas-tip"><i className="ph ph-hand-grabbing" />拖动卡片后，连线会同步更新</div>
         </div>
-      ) : null}
-
-      {/* 页头 */}
-      <div className="oo-page-heading" style={{ marginBottom: 20 }}>
-        <div>
-          <span className="oo-eyebrow" style={{ marginBottom: 0 }}>数据管道</span>
-          <h1>数据与管道</h1>
-          <div className="oo-heading-meta" style={{ marginTop: 8 }}>
-            <span>程序驱动 · LLM 仅在需要时提供候选 · 人类最终确认</span>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-          <button className="oo-secondary-button" type="button" onClick={() => fileInput.current?.click()}>
-            <i className="ph ph-plus" />新建管道
-          </button>
-          <input ref={fileInput} type="file" multiple accept=".csv,.xlsx" hidden
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFile(f); }} />
-        </div>
-      </div>
-
-      {/* 主区域：左侧纵向步骤 + 右侧详情 */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "222px minmax(0, 1fr)", gap: 0, minHeight: 480,
-        border: "1px solid oklch(0.9 0.01 155)", borderRadius: 10, overflow: "hidden",
-        background: "#fff", boxShadow: "0 3px 7px oklch(0.16 0.016 155 / 0.07)",
-      }}>
-        {/* 左侧步骤 */}
-        <div style={{ borderRight: "1px solid oklch(0.9 0.01 155)", background: "#fff", display: "flex", flexDirection: "column" }}>
-          {STEPS.map((step) => {
-            const isActive = activeStep === step.id;
-            const isLLM = step.id === 2 || step.id === 3;
-            return (
-              <button key={step.id} type="button" onClick={() => setActiveStep(step.id)}
-                style={{
-                  cursor: "pointer", border: 0, width: "100%", textAlign: "left",
-                  display: "flex", alignItems: "flex-start", gap: 12,
-                  padding: "14px 14px", borderBottom: "1px solid oklch(0.9 0.01 155)",
-                  borderLeft: isActive ? "3px solid oklch(0.53 0.13 160)" : "3px solid transparent",
-                  background: isActive ? "oklch(0.94 0.04 160)" : "#fff",
-                  transition: "background .1s",
-                }}
-              >
-                <div style={{
-                  width: 30, height: 30, flex: "0 0 auto", borderRadius: 8,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 13, fontWeight: 700,
-                  color: isActive ? "#fff" : "oklch(0.63 0.015 155)",
-                  background: isActive ? "oklch(0.53 0.13 160)" : "oklch(0.972 0.006 155)",
-                }}>{step.id + 1}</div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <strong style={{ fontSize: 13, color: isActive ? "oklch(0.23 0.018 155)" : "oklch(0.48 0.018 155)" }}>
-                      {step.label}
-                    </strong>
-                    {isLLM ? (
-                      <span style={{
-                        display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 6px",
-                        borderRadius: 4, fontSize: 9, fontWeight: 700,
-                        color: "oklch(0.43 0.13 285)", background: "oklch(0.95 0.05 285)",
-                      }}>
-                        <i className="ph ph-sparkle" style={{ fontSize: 10 }} />AI
-                      </span>
-                    ) : null}
-                  </div>
-                  <div style={{ marginTop: 4, color: "oklch(0.63 0.015 155)", fontSize: 10, lineHeight: 1.4 }}>
-                    {step.desc}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 右侧详情 */}
-        <div style={{ minWidth: 0 }}>
-
-          {/* ===== 步骤 1: 数据连接 ===== */}
-          {activeStep === 0 ? (
-            <div>
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
-                minHeight: 54, padding: "0 18px", borderBottom: "1px solid oklch(0.9 0.01 155)",
-              }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>数据源列表</h2>
-                  <p style={{ margin: "2px 0 0", color: "oklch(0.63 0.015 155)", fontSize: 12 }}>
-                    {sources.length} 个文件已连接
-                  </p>
-                </div>
-                <button className="oo-primary-button" type="button" style={{ minHeight: 30, padding: "0 10px", fontSize: 11 }}
-                  onClick={() => setActiveStep(1)}>
-                  下一步 <i className="ph ph-arrow-right" />
-                </button>
-              </div>
-              {sources.length > 0 ? (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{
-                    width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 0,
-                  }}>
-                    <thead>
-                      <tr style={{ height: 38, color: "oklch(0.63 0.015 155)", background: "oklch(0.997 0.002 155)", fontSize: 11, fontWeight: 700 }}>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>文件名</th>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>类型</th>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>状态</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sources.map((s) => (
-                        <tr key={s.id}
-                          onClick={() => previewSource(s)}
-                          style={{
-                            cursor: "pointer", height: 46,
-                            background: selectedFile === s.name ? "oklch(0.94 0.04 160)" : undefined,
-                          }}>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                            <strong style={{ fontSize: 12 }}>{s.name}</strong>
-                          </td>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)", color: "oklch(0.63 0.015 155)" }}>
-                            <span className="oo-badge oo-badge-draft" style={{ fontSize: 10, padding: "2px 6px" }}>{s.kind}</span>
-                          </td>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                            <span className="oo-badge oo-badge-ok" style={{ fontSize: 10, padding: "2px 6px" }}>已连接</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div style={{ padding: "48px 20px", textAlign: "center", color: "oklch(0.63 0.015 155)", fontSize: 12 }}>
-                  暂无数据源，请上传 csv 文件
-                </div>
-              )}
-              <div style={{ padding: 14, borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                <div style={{
-                  border: "2px dashed oklch(0.82 0.014 155)", borderRadius: 8,
-                  padding: "22px 16px", textAlign: "center", color: "oklch(0.63 0.015 155)",
-                  fontSize: 12, background: "oklch(0.972 0.006 155)", cursor: "pointer",
-                }} onClick={() => fileInput.current?.click()}>
-                  <i className="ph ph-file-arrow-up" style={{ fontSize: 24, display: "block", marginBottom: 6, color: "oklch(0.45 0.115 160)" }} />
-                  拖拽或点击上传 csv / excel 文件
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {/* ===== 步骤 2: 数据存储 ===== */}
-          {activeStep === 1 ? (
-            <div>
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
-                minHeight: 54, padding: "0 18px", borderBottom: "1px solid oklch(0.9 0.01 155)",
-              }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>字段 schema 确认</h2>
-                  <p style={{ margin: "2px 0 0", color: "oklch(0.63 0.015 155)", fontSize: 12 }}>
-                    {selectedFile || "请先选择数据源"} · 由程序推断（无 LLM 参与）
-                  </p>
-                </div>
-                <button className="oo-primary-button" type="button" style={{ minHeight: 30, padding: "0 10px", fontSize: 11 }}
-                  onClick={registerDataset} disabled={datasetRegistered}>
-                  <i className="ph ph-database" />{datasetRegistered ? "已注册" : "确认并注册"}
-                </button>
-              </div>
-              {previewCols.length > 0 ? (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 0 }}>
-                    <thead>
-                      <tr style={{ height: 38, color: "oklch(0.63 0.015 155)", background: "oklch(0.997 0.002 155)", fontSize: 11, fontWeight: 700 }}>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>字段</th>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>类型</th>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>唯一值</th>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>空值</th>
-                        <th style={{ padding: "0 16px", textAlign: "left" }}>样例</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewCols.map((col) => (
-                        <tr key={col.name} style={{ height: 46 }}>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                            <strong style={{ fontSize: 12 }}>{col.name}</strong>
-                          </td>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)", color: "oklch(0.48 0.018 155)" }}>
-                            {col.type}
-                          </td>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)", color: "oklch(0.48 0.018 155)" }}>
-                            {col.unique_count}
-                          </td>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                            {col.null_percent}%
-                          </td>
-                          <td style={{ padding: "0 16px", borderTop: "1px solid oklch(0.9 0.01 155)", color: "oklch(0.63 0.015 155)", fontSize: 11 }}>
-                            {col.samples?.slice(0, 3).join(", ") || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div style={{ padding: "48px 20px", textAlign: "center", color: "oklch(0.63 0.015 155)", fontSize: 12 }}>
-                  {selectedFile ? "暂无字段信息，请通过本体创建流程上传文件。" : "请先在数据连接步骤上传 csv 文件。"}
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          {/* ===== 步骤 3: 数据预处理 ===== */}
-          {activeStep === 2 ? (
-            <div>
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
-                minHeight: 54, padding: "0 18px", borderBottom: "1px solid oklch(0.9 0.01 155)",
-              }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>数据预处理</h2>
-                  <p style={{ margin: "2px 0 0", color: "oklch(0.63 0.015 155)", fontSize: 12 }}>
-                    程序执行清洗 · LLM 提供候选建议
-                  </p>
-                </div>
-                <button className="oo-primary-button" type="button" style={{ minHeight: 30, padding: "0 10px", fontSize: 11 }}
-                  onClick={() => setActiveStep(3)}>
-                  保存并下一步 <i className="ph ph-arrow-right" />
-                </button>
-              </div>
-
-              {/* LLM 推荐条 */}
-              {(llmRenames.length > 0 || llmCasts.length > 0) ? (
-                <div style={{
-                  margin: "14px 18px", padding: "12px 14px",
-                  border: "1px solid oklch(0.78 0.08 285)", borderRadius: 8,
-                  background: "oklch(0.97 0.025 285)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <i className="ph ph-sparkle" style={{ color: "oklch(0.43 0.13 285)", fontSize: 16 }} />
-                    <strong style={{ fontSize: 13, color: "oklch(0.43 0.13 285)" }}>
-                      LLM 推荐 · {llmRenames.length + llmCasts.length} 条候选
-                    </strong>
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "oklch(0.63 0.015 155)" }}>
-                      基于字段名和样例值推断
-                    </span>
-                  </div>
-                  {llmRenames.map((r, i) => (
-                    <div key={`ren-${i}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 4 }}>
-                      <i className="ph ph-arrow-right" style={{ color: "oklch(0.63 0.015 155)", fontSize: 11 }} />
-                      <span><b>{r.from}</b> → <b>{r.to}</b></span>
-                      <button className="oo-primary-button" type="button" style={{ minHeight: 24, padding: "0 8px", fontSize: 10, marginLeft: "auto" }}
-                        onClick={() => { setRenames((prev) => [...prev, r]); setLlmRenames((prev) => prev.filter((_, j) => j !== i)); }}>
-                        采纳
-                      </button>
-                    </div>
-                  ))}
-                  {llmCasts.map((c, i) => (
-                    <div key={`cast-${i}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 4 }}>
-                      <i className="ph ph-arrow-right" style={{ color: "oklch(0.63 0.015 155)", fontSize: 11 }} />
-                      <span><b>{c.field}</b> → <b>{c.target}</b></span>
-                      <button className="oo-primary-button" type="button" style={{ minHeight: 24, padding: "0 8px", fontSize: 10, marginLeft: "auto" }}
-                        onClick={() => { setCasts((prev) => [...prev, c]); setLlmCasts((prev) => prev.filter((_, j) => j !== i)); }}>
-                        采纳
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : llmLoading ? (
-                <div style={{ padding: "14px 18px", fontSize: 12, color: "oklch(0.63 0.015 155)" }}>
-                  <i className="ph ph-spinner oo-spinner" /> LLM 预填中...
-                </div>
-              ) : null}
-
-              {/* Tabs */}
-              <div style={{ display: "flex", gap: 4, borderBottom: "1px solid oklch(0.9 0.01 155)" }}>
-                {(["dedup", "rename", "cast"] as PreprocTab[]).map((tab) => (
-                  <button key={tab} type="button"
-                    onClick={() => setPreprocTab(tab)}
-                    style={{
-                      padding: "9px 13px", border: 0, borderBottom: preprocTab === tab ? "2px solid oklch(0.53 0.13 160)" : "2px solid transparent",
-                      color: preprocTab === tab ? "oklch(0.23 0.018 155)" : "oklch(0.63 0.015 155)",
-                      fontWeight: preprocTab === tab ? 700 : 400,
-                      background: "transparent", fontSize: 12, cursor: "pointer",
-                    }}>
-                    {tab === "dedup" ? "去重" : tab === "rename" ? "字段重命名" : "类型转换"}
-                  </button>
-                ))}
-              </div>
-
-              {preprocTab === "dedup" ? (
-                <div style={{ padding: 18 }}>
-                  <div className="oo-notice" style={{ marginBottom: 14, fontSize: 12 }}>
-                    <i className="ph ph-git-merge" />
-                    <span>已对数据集执行精确去重扫描：0 个精确重复行。</span>
-                  </div>
-                  <div style={{ border: "1px solid oklch(0.9 0.01 155)", borderRadius: 8 }}>
-                    <div style={{ padding: "10px 14px", borderBottom: "1px solid oklch(0.9 0.01 155)", fontSize: 13, fontWeight: 600 }}>
-                      去重依据字段
-                    </div>
-                    <div style={{ padding: "10px 14px" }}>
-                      {["customer_id", "name", "contact"].map((f) => (
-                        <label key={f} style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 32, fontSize: 12, cursor: "pointer" }}>
-                          <input type="checkbox" checked={dedupKeys.includes(f)}
-                            onChange={() => setDedupKeys((prev) => prev.includes(f) ? prev.filter((k) => k !== f) : [...prev, f])} />
-                          {f}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {preprocTab === "rename" ? (
-                <div style={{ padding: 14 }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ height: 34, color: "oklch(0.63 0.015 155)", fontSize: 11 }}>
-                        <th style={{ textAlign: "left", padding: "0 8px" }}>原字段</th>
-                        <th style={{ textAlign: "left", padding: "0 8px" }}>新字段</th>
-                        <th style={{ textAlign: "left", padding: "0 8px" }}>来源</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {["customer_id", "name", "region", "credit_level"].map((f) => {
-                        const renamed = renames.find((r) => r.from === f);
-                        const isLlm = llmRenames.some((r) => r.from === f);
-                        return (
-                          <tr key={f} style={{ height: 44 }}>
-                            <td style={{ padding: "0 8px", borderTop: "1px solid oklch(0.9 0.01 155)" }}><strong>{f}</strong></td>
-                            <td style={{ padding: "0 8px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                              <input value={renamed?.to ?? f}
-                                onChange={(e) => {
-                                  const updated = renames.filter((r) => r.from !== f);
-                                  if (e.target.value !== f) updated.push({ from: f, to: e.target.value });
-                                  setRenames(updated);
-                                }}
-                                style={{
-                                  padding: "4px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4,
-                                  fontSize: 12, width: 140,
-                                  background: isLlm ? "oklch(0.94 0.04 160)" : "#fff",
-                                }} />
-                            </td>
-                            <td style={{ padding: "0 8px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                              {isLlm ? <span className="oo-badge" style={{ fontSize: 9, padding: "2px 6px", color: "oklch(0.43 0.13 285)", background: "oklch(0.95 0.05 285)" }}>AI</span> : null}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-
-              {preprocTab === "cast" ? (
-                <div style={{ padding: 14 }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ height: 34, color: "oklch(0.63 0.015 155)", fontSize: 11 }}>
-                        <th style={{ textAlign: "left", padding: "0 8px" }}>字段</th>
-                        <th style={{ textAlign: "left", padding: "0 8px" }}>当前</th>
-                        <th style={{ textAlign: "left", padding: "0 8px" }}>目标类型</th>
-                        <th style={{ textAlign: "left", padding: "0 8px" }}>来源</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {["since", "credit_level"].map((f) => {
-                        const cast = casts.find((c) => c.field === f);
-                        const isLlm = llmCasts.some((c) => c.field === f);
-                        return (
-                          <tr key={f} style={{ height: 44 }}>
-                            <td style={{ padding: "0 8px", borderTop: "1px solid oklch(0.9 0.01 155)" }}><strong>{f}</strong></td>
-                            <td style={{ padding: "0 8px", borderTop: "1px solid oklch(0.9 0.01 155)", color: "oklch(0.48 0.018 155)" }}>
-                              {f === "since" ? "integer" : "string"}
-                            </td>
-                            <td style={{ padding: "0 8px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                              <select value={cast?.target ?? ""}
-                                onChange={(e) => {
-                                  const updated = casts.filter((c) => c.field !== f);
-                                  if (e.target.value) updated.push({ field: f, target: e.target.value });
-                                  setCasts(updated);
-                                }}
-                                style={{
-                                  padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4,
-                                  fontSize: 12,
-                                  background: isLlm ? "oklch(0.94 0.04 160)" : "#fff",
-                                }}>
-                                <option value="">—</option>
-                                <option value="string">string</option>
-                                <option value="integer">integer</option>
-                                {f === "since" ? <option value="date">date</option> : <option value="enum">enum</option>}
-                              </select>
-                            </td>
-                            <td style={{ padding: "0 8px", borderTop: "1px solid oklch(0.9 0.01 155)" }}>
-                              {isLlm ? <span className="oo-badge" style={{ fontSize: 9, padding: "2px 6px", color: "oklch(0.43 0.13 285)", background: "oklch(0.95 0.05 285)" }}>AI</span> : null}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* ===== 步骤 4: 本体映射 ===== */}
-          {activeStep === 3 ? (
-            <div>
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
-                minHeight: 54, padding: "0 18px", borderBottom: "1px solid oklch(0.9 0.01 155)",
-              }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>字段映射</h2>
-                  <p style={{ margin: "2px 0 0", color: "oklch(0.63 0.015 155)", fontSize: 12 }}>
-                    LLM 基于字段名与属性语义推荐 · 人类最终确认
-                  </p>
-                </div>
-                <button className="oo-primary-button" type="button" style={{ minHeight: 30, padding: "0 10px", fontSize: 11 }}
-                  onClick={() => setNotice("映射已确认，数据将接入本体。")}>
-                  <i className="ph ph-check" />确认映射
-                </button>
-              </div>
-
-              {/* LLM 预填提示 */}
-              {llmMappings.length > 0 ? (
-                <div style={{
-                  margin: "14px 18px", padding: "12px 14px",
-                  border: "1px solid oklch(0.78 0.08 285)", borderRadius: 8,
-                  background: "oklch(0.97 0.025 285)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <i className="ph ph-sparkle" style={{ color: "oklch(0.43 0.13 285)", fontSize: 16 }} />
-                    <strong style={{ fontSize: 13, color: "oklch(0.43 0.13 285)" }}>
-                      LLM 自动预填 · {llmMappings.length} 条映射
-                    </strong>
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "oklch(0.63 0.015 155)" }}>
-                      已自动应用 · 可逐条调整
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  margin: "14px 18px", padding: "12px 14px",
-                  border: "1px solid oklch(0.82 0.014 155)", borderRadius: 8,
-                  background: "oklch(0.972 0.006 155)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <i className="ph ph-info" style={{ color: "oklch(0.45 0.115 160)" }} />
-                    <span style={{ fontSize: 12, color: "oklch(0.48 0.018 155)" }}>
-                      请先在左侧选择目标本体后，LLM 将根据字段名自动预填映射建议。
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* 映射配置 */}
-              <div style={{ display: "grid" }}>
-                <div style={{
-                  padding: "12px 18px", borderBottom: "1px solid oklch(0.9 0.01 155)",
-                  display: "flex", alignItems: "center", gap: 10,
-                  background: "oklch(0.997 0.002 155)", fontSize: 11, color: "oklch(0.63 0.015 155)",
-                }}>
-                  <span style={{ width: 140 }}>数据集字段</span>
-                  <span style={{ width: 30 }} />
-                  <span>本体实体属性</span>
-                </div>
-                {["customer_id", "name", "region", "credit_level", "since"].map((f) => {
-                  const mapping = mappings.find((m) => m.field === f);
-                  const isLlm = llmMappings.some((m) => m.field === f);
-                  return (
-                    <div key={f} className="resource-line" style={{
-                      display: "grid", gridTemplateColumns: "18px minmax(0, 1fr) 170px auto",
-                      gap: 10, alignItems: "center", minHeight: 46, padding: "0 16px",
-                      borderBottom: "1px solid oklch(0.9 0.01 155)",
-                      fontSize: 12, color: "oklch(0.48 0.018 155)",
-                    }}>
-                      <i className="ph ph-file-text" style={{ fontSize: 16, color: "oklch(0.63 0.015 155)" }} />
-                      <div>
-                        <strong style={{ color: "oklch(0.23 0.018 155)" }}>{f}</strong>
-                      </div>
-                      <select value={mapping ? `${mapping.entity}.${mapping.property}` : ""}
-                        onChange={(e) => {
-                          const updated = mappings.filter((m) => m.field !== f);
-                          if (e.target.value) {
-                            const [entity, property] = e.target.value.split(".");
-                            updated.push({ field: f, entity, property });
-                          }
-                          setMappings(updated);
-                        }}
-                        style={{
-                          padding: "3px 6px", border: `1px solid ${isLlm ? "oklch(0.53 0.13 160)" : "oklch(0.82 0.014 155)"}`,
-                          borderRadius: 4, fontSize: 11,
-                          background: isLlm ? "oklch(0.94 0.04 160)" : "#fff",
-                        }}>
-                        <option value="">— 不映射 —</option>
-                        <option value="Customer.customer_id">Customer.customer_id</option>
-                        <option value="Customer.name">Customer.name</option>
-                        <option value="Customer.region">Customer.region</option>
-                        <option value="Customer.credit_level">Customer.credit_level</option>
-                        <option value="Customer.since">Customer.since</option>
-                        <option value="SalesOrder.order_id">SalesOrder.order_id</option>
-                      </select>
-                      {isLlm ? (
-                        <span className="oo-badge" style={{ fontSize: 9, padding: "2px 6px", color: "oklch(0.43 0.13 285)", background: "oklch(0.95 0.05 285)" }}>
-                          AI 推荐
-                        </span>
-                      ) : (
-                        <span style={{ color: "oklch(0.63 0.015 155)", fontSize: 10 }}>人工</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-        </div>
-      </div>
+        <footer className="oo-pipeline-actionbar" data-testid="pipeline-actionbar"><span><i className="ph ph-play-circle" />运行清洗与质量规则后，才可进入本体映射</span><button className="oo-primary-button" type="button" disabled={!editable || busy} onClick={runQualityPipeline}><i className="ph ph-play" />{busy ? "处理中…" : "预览运行"}</button></footer>
+      </section>
+      <aside className="oo-pipeline-inspector"><header><span className="oo-eyebrow">{nodeCopy[selectedNode].label}</span><h2>{active.title}</h2><p>{active.desc}</p></header>
+        {selectedNode === "connection" ? <section><h3>上传 CSV 文件</h3><input ref={inputRef} type="file" accept=".csv,text/csv" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) void uploadCsvFiles(files); event.currentTarget.value = ""; }} /><button data-testid="connection-dropzone" className={`oo-pipeline-dropzone ${draggingFiles ? "is-dragging" : ""}`} type="button" disabled={!editable || busy} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDraggingFiles(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (event.currentTarget === event.target) setDraggingFiles(false); }} onDrop={(event) => { event.preventDefault(); setDraggingFiles(false); const files = Array.from(event.dataTransfer.files); if (files.length) void uploadCsvFiles(files); }}><i className="ph ph-upload-simple" /><strong>拖放 CSV 文件到此处</strong><span>或点击选择文件，可一次上传多个文件</span></button><p className="oo-pipeline-help">每个文件会分别创建独立的数据源和原始数据集；请在下方选择当前要处理的文件。</p>{sources.length ? <label className="oo-pipeline-field">已连接文件<select value={selectedSourceId} onChange={(event) => setSelectedSourceId(event.target.value)}>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label> : null}</section> : null}
+        {selectedNode === "storage" ? <section><h3>数据集版本</h3><div className="oo-pipeline-kv"><span>状态</span><strong>{selectedSource?.dataset?.stage || "等待上传"}</strong></div><div className="oo-pipeline-kv"><span>行数</span><strong>{preview?.row_count ?? "—"}</strong></div><div className="oo-pipeline-kv"><span>字段数</span><strong>{preview?.columns.length ?? "—"}</strong></div><div className="oo-pipeline-kv"><span>数据集 ID</span><strong>{selectedSource?.dataset?.id || "—"}</strong></div></section> : null}
+        {selectedNode === "quality" ? <section><h3>规则与人工确认</h3><div className="oo-pipeline-ai"><div><i className="ph ph-sparkle" /><strong>AI 建议，需人工确认</strong></div><p>建议规范订单日期，并对 {primaryField || "订单标识"} 执行唯一性检查。</p><div><button type="button" onClick={() => setNotice("建议已采用为规则草稿，仍需运行验证。")}><span>采用为草稿</span></button><button type="button" onClick={() => setNotice("请在规则配置中调整字段或阈值。")}><span>修改</span></button></div></div><div className="oo-pipeline-rule"><span>{primaryField || "订单标识"} 唯一性</span><b>{activeTrustedDatasetId ? "通过" : "待运行"}</b></div><button className="oo-secondary-button oo-full-width" type="button" disabled={!editable || busy || !selectedSource} onClick={runQualityPipeline}><i className="ph ph-play" />运行清洗与质量</button></section> : null}
+        {selectedNode === "mapping" ? <section><h3>映射配置</h3>{ontologies.length ? <><label className="oo-pipeline-field">已发布本体<select value={ontologyId} onChange={(event) => { setOntologyId(event.target.value); setEntityId(""); }}>{ontologies.map((ontology) => <option key={ontology.id} value={ontology.id}>{ontology.name} · v{ontology.version}</option>)}</select></label><label className="oo-pipeline-field">目标实体类型<select value={entityId} onChange={(event) => setEntityId(event.target.value)}>{selectedOntology?.entities.map((entity) => <option key={entity.name} value={entity.name}>{entity.label || entity.name}</option>)}</select></label>{selectedEntity ? <><p className="oo-pipeline-help">已按字段语义生成候选映射；确认后将可信数据集填充为实体实例。</p><div className="oo-pipeline-mapping-list">{selectedEntity.properties.map((property) => <div key={property.name}><code>{property.is_key ? <b>PK</b> : null}{property.name}</code><i className="ph ph-arrow-right" /><span>{suggestedFieldMappings[property.name] || "未映射"}</span></div>)}</div></> : null}<button className="oo-primary-button oo-full-width" type="button" disabled={!editable || busy || !activeTrustedDatasetId || !primaryKeySource} onClick={materialize}><i className="ph ph-check" />验证并填充实体数据</button>{mappingResult ? <button className="oo-secondary-button oo-full-width" type="button" onClick={() => window.location.assign(`/ontology/${ontologyId}`)}><i className="ph ph-table" />查看 {mappingResult.total_count} 条实体数据</button> : null}</> : <p className="oo-pipeline-help">请先创建并发布本体，再选择目标实体类型。</p>}</section> : null}
+        <footer><button className="oo-secondary-button oo-full-width" type="button" onClick={() => setNotice("资源追溯将在治理与可追溯中查看。")}>查看资源追溯</button></footer>
+      </aside>
     </div>
-  );
+    <div className="oo-pipeline-footnote"><i className="ph ph-info" />大模型只生成可审阅的建议草稿。清洗、质量与映射均由确定性规则执行，并保留数据集、映射和运行证据。</div>
+  </div>;
 }

@@ -1,0 +1,5 @@
+sales_order_no,customer_code,product_code,order_date,quantity,unit_price,delivery_due_date,fulfillment_status
+SO-202607-001,C-1001,FG-AX12,2026-07-03,120,86.50,2026-07-16,库存履约
+SO-202607-002,C-1002,FG-AX12,2026-07-05,80,86.50,2026-07-19,待排产
+SO-202607-003,C-1003,FG-BX08,2026-07-08,45,128.00,2026-07-22,待排产
+SO-202607-004,C-1001,FG-CX20,2026-07-10,30,215.00,2026-07-25,库存履约

@@ -97,38 +97,17 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
         </div>
       ) : null}
 
-      <button className="oo-detail-back" type="button" onClick={() => navigate("/ontology")}>
-        <i className="ph ph-arrow-left" aria-hidden="true" />本体管理
-      </button>
-
-      <section className="oo-detail-hero">
-        <div className="oo-detail-title-block">
-          <span className="oo-detail-icon oo-detail-icon-large"><i className="ph ph-hexagon" aria-hidden="true" /></span>
-          <div>
-            <div className="oo-detail-title-line">
-              <h2>{ontology.name}</h2>
-              <span className={`oo-badge ${ontology.status === "published" ? "oo-badge-ok" : "oo-badge-draft"}`}>
-                v{ontology.version} {ontology.status === "published" ? "已发布" : "草稿"}
-              </span>
-            </div>
-            <p>{ontology.scope}</p>
-            <div className="oo-detail-meta">
-              <span><i className="ph ph-clock" aria-hidden="true" />{ontology.updated}更新</span>
-              <span><i className="ph ph-database" aria-hidden="true" />本地工作区</span>
-            </div>
-          </div>
-        </div>
-        <div className="oo-detail-actions">
-          <button className="oo-secondary-button" type="button" onClick={() => setNotice("当前已是最新草稿，可以继续检查实体和关系。") }>
-            <i className="ph ph-pencil-simple" aria-hidden="true" />编辑草稿
+      <header className="oo-detail-context">
+        <button className="oo-detail-back" type="button" onClick={() => navigate("/ontology")}><i className="ph ph-arrow-left" aria-hidden="true" />本体管理</button>
+        <span className="oo-detail-context-divider" aria-hidden="true" />
+        <h1>{ontology.name}</h1>
+        <span className={`oo-badge ${ontology.status === "published" ? "oo-badge-ok" : "oo-badge-draft"}`}>v{ontology.version} {ontology.status === "published" ? "已发布" : "草稿"}</span>
+        {editable && ontology.status === "draft" ? (
+          <button className="oo-primary-button oo-detail-publish" type="button" onClick={publishOntology} disabled={validationLoading || validation?.valid !== true}>
+            <i className="ph ph-paper-plane-tilt" aria-hidden="true" />发布 v{ontology.version}
           </button>
-          {editable && ontology.status === "draft" ? (
-            <button className="oo-primary-button" type="button" onClick={publishOntology} disabled={validationLoading || validation?.valid !== true}>
-              <i className="ph ph-paper-plane-tilt" aria-hidden="true" />发布版本
-            </button>
-          ) : null}
-        </div>
-      </section>
+        ) : null}
+      </header>
 
       {ontology.status === "draft" && validation?.blockers.length ? (
         <div className="oo-notice" role="status">
@@ -137,7 +116,8 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
         </div>
       ) : null}
 
-      <nav className="oo-detail-tabs" aria-label="本体详情导航">
+      <section className="oo-detail-view-head">
+        <nav className="oo-detail-tabs" aria-label="本体详情导航">
         {tabLabels.map((tab) => (
           <button className={activeTab === tab.id ? "is-active" : ""} key={tab.id} type="button" onClick={() => setActiveTab(tab.id)}>
             <i className={`ph ${tab.icon}`} aria-hidden="true" />{tab.label}
@@ -145,10 +125,12 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
             {tab.id === "relationships" ? <span>{ontology.relationships.length}</span> : null}
           </button>
         ))}
-      </nav>
+        </nav>
+      </section>
 
       {activeTab === "graph" ? (
         <OntologyGraphView
+          ontologyId={ontology.id}
           entities={ontology.entities}
           relationships={ontology.relationships}
           initialSelected={selectedEntityName}

@@ -75,7 +75,7 @@ describe("OntologyDetailPage", () => {
     );
 
     expect(await screen.findByText("供应商数据集尚未可信")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /发布版本/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "发布 v0.1" })).toBeDisabled();
   });
 
   it("shows ontology overview, entities, relationships and publishes the draft", async () => {
@@ -98,9 +98,44 @@ describe("OntologyDetailPage", () => {
     expect(screen.getAllByText("客户").length).toBeGreaterThan(0);
     expect(screen.getByText("customer_id")).toBeInTheDocument();
 
-    await waitFor(() => expect(screen.getByRole("button", { name: /发布版本/ })).toBeEnabled());
-    await user.click(screen.getByRole("button", { name: /发布版本/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "发布 v0.1" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "发布 v0.1" }));
     expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "published", version: "1", releaseId: "release-1" }));
     expect(screen.getByText(/版本 v1 已发布/)).toBeInTheDocument();
+  });
+
+  it("keeps the detail header focused on publishing, without an edit-draft action", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ valid: true, blockers: [] }),
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/ontology/onto-manufacturing"]}>
+        <Routes>
+          <Route path="/ontology/:id" element={<OntologyDetailPage role="modeler" ontologies={[{ ...ontology, draftId: "draft-3" }]} onUpdate={() => undefined} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("button", { name: "发布 v0.1" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "编辑草稿" })).not.toBeInTheDocument();
+  });
+
+  it("removes the redundant ontology-structure heading above the graph", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ valid: true, blockers: [] }),
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/ontology/onto-manufacturing"]}>
+        <Routes>
+          <Route path="/ontology/:id" element={<OntologyDetailPage role="modeler" ontologies={[{ ...ontology, draftId: "draft-4" }]} onUpdate={() => undefined} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("heading", { name: "本体结构" })).not.toBeInTheDocument();
   });
 });

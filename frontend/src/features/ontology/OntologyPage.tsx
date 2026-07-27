@@ -37,7 +37,10 @@ type DetectedLink = {
   type: string; confidence: string; source_file: string;
   source_column: string; target_file: string; target_column: string; message: string;
 };
-type QAQuestion = { id: string; category: string; question: string; suggested: string[] };
+type QAQuestion = {
+  id: string; category: string; question: string; suggested: string[];
+  recommended?: string; recommendation_reason?: string;
+};
 type ProfilingResult = {
   profiling: { files_parsed: number; columns_total: number; details: FileProfile[] };
   links_detected: DetectedLink[];
@@ -61,7 +64,7 @@ function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
-function normalizeLLMAnalysis(value: unknown, fallback?: LLMAnalysis): LLMAnalysis {
+export function normalizeLLMAnalysis(value: unknown, fallback?: LLMAnalysis): LLMAnalysis {
   const root = asRecord(value);
   const rawEntities = Array.isArray(root.entities) ? root.entities : [];
   const rawRelationships = Array.isArray(root.relationships) ? root.relationships : [];
@@ -104,13 +107,17 @@ function normalizeLLMAnalysis(value: unknown, fallback?: LLMAnalysis): LLMAnalys
 
   const questions = rawQuestions.map((item, questionIndex) => {
     const question = asRecord(item);
+    const suggested = Array.isArray(question.suggested)
+      ? question.suggested.filter((option): option is string => typeof option === "string")
+      : [];
+    const requestedRecommendation = asString(question.recommended);
     return {
       id: asString(question.id, `llm-q-${questionIndex + 1}`),
       category: asString(question.category, "confirm"),
       question: asString(question.question, `请确认候选项 ${questionIndex + 1}`),
-      suggested: Array.isArray(question.suggested)
-        ? question.suggested.filter((option): option is string => typeof option === "string")
-        : [],
+      suggested,
+      recommended: suggested.includes(requestedRecommendation) ? requestedRecommendation : (suggested[0] ?? ""),
+      recommendation_reason: asString(question.recommendation_reason),
     };
   });
 
@@ -228,6 +235,8 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
             category: "relationship",
             question: `检测到潜在关系：「${r.name}」（${r.from_entity} → ${r.to_entity}）。是否确认？`,
             suggested: ["确认", "调整", "跳过"],
+            recommended: "确认",
+            recommendation_reason: "该关系来自已检测到的字段关联，需由建模者确认业务语义。",
           }));
         }
         if (parsed.questions.length === 0) {
@@ -237,6 +246,8 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
               category: "confirm",
               question: "基于以上分析，是否确认将生成的对象和关系加入草稿？",
               suggested: ["确认全部", "稍后审核"],
+              recommended: "确认全部",
+              recommendation_reason: "当前没有仍待澄清的结构性问题。",
             },
           ];
         }
@@ -251,6 +262,8 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
               category: "error",
               question: "LLM 返回无法解析为结构化 JSON，请查看下方原始输出。是否继续？",
               suggested: ["继续", "重试"],
+              recommended: "重试",
+              recommendation_reason: "重新获取结构化结果比在不完整候选上继续更可靠。",
             },
           ],
           summary: text,
@@ -304,6 +317,7 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
         body: JSON.stringify({
           analysis: llmRawText.current || JSON.stringify(llm),
           answers: updatedAnswers,
+          questions: llm.questions,
           draft: { name: formName, scope: formScope },
         }),
       });
@@ -348,12 +362,18 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
       relationships,
     };
     try {
-      await fetch("/api/ontology-drafts/list", {
+      const response = await fetch("/api/ontology-drafts/list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(onto),
       });
-    } catch { /* persistence failure is non-blocking */ }
+      if (!response.ok) throw new Error("ontology persistence failed");
+      const saved = await response.json() as { draft_id?: string };
+      onto.draftId = saved.draft_id;
+    } catch {
+      setNotice("本体草稿保存失败，请确认本地服务已启动后重试。");
+      return;
+    }
     onCreated?.(onto);
     closeCreate();
     navigate(`/ontology/${id}`);
@@ -407,12 +427,14 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
             {ontologies.map((o) => (
               <div className="oo-onto-card" key={o.id}>
                 <div className="oo-onto-card-head">
-                  <h3>{o.name}</h3>
+                  <div className="oo-onto-identity">
+                    <span className="oo-onto-icon"><i className="ph ph-cube" /></span>
+                    <div><h3>{o.name}</h3><p>{o.scope}</p></div>
+                  </div>
                   {o.status === "draft"
                     ? <span className="oo-badge oo-badge-draft">v{o.version} 草稿</span>
                     : <span className="oo-badge oo-badge-ok">v{o.version} 已发布</span>}
                 </div>
-                <p className="oo-onto-desc">{o.scope}</p>
                 <div className="oo-onto-stats">
                   <div><strong>{o.objects}</strong><span>实体</span></div>
                   <div><strong>{o.links}</strong><span>关系</span></div>
@@ -420,8 +442,8 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
                 </div>
                 <div className="oo-onto-footer">
                   <small className="muted">{o.updated}</small>
-                  <button className="oo-primary-button" type="button" onClick={() => navigate(`/ontology/${o.id}`)}>
-                    进入本体 <i className="ph ph-arrow-right"></i>
+                  <button className="oo-onto-open" type="button" onClick={() => navigate(`/ontology/${o.id}`)}>
+                    查看 <i className="ph ph-arrow-right"></i>
                   </button>
                 </div>
               </div>
@@ -550,9 +572,11 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
                             <div style={{ fontSize: 14, fontWeight: 600, color: "oklch(0.23 0.018 155)", marginBottom: 10, lineHeight: 1.5 }}>
                               {q.question}
                             </div>
-                            <div style={{ fontSize: 11, color: "oklch(0.48 0.018 155)", marginBottom: 8 }}>
-                              AI 建议：{q.suggested.join(" / ")}
-                            </div>
+                            {q.recommended ? (
+                              <div style={{ fontSize: 11, color: "oklch(0.35 0.07 160)", marginBottom: 8 }}>
+                                AI 建议：<strong>{q.recommended}</strong>{q.recommendation_reason ? ` · ${q.recommendation_reason}` : ""}
+                              </div>
+                            ) : null}
                             {q.id === "parse-fail" && llm.summary ? (
                               <details style={{ marginBottom: 10 }}>
                                 <summary style={{ fontSize: 11, color: "oklch(0.58 0.16 28)", cursor: "pointer" }}>查看 LLM 原始返回（前 800 字符）</summary>
@@ -569,7 +593,7 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
                                     style={{ padding: "4px 10px", fontSize: 12, minHeight: 30 }}
                                     onClick={() => answerQuestion(q.id, s)}
                                   >
-                                    {s}
+                                    {s}{q.recommended === s ? "（推荐）" : ""}
                                   </button>
                                 ))}
                                 <button

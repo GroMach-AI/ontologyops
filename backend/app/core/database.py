@@ -48,6 +48,11 @@ def _migrate_sqlite_schema(engine: Engine) -> None:
         if "config_json" not in quality_columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE quality_rules ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'"))
+    if "user_ontologies" in table_names:
+        ontology_columns = {column["name"] for column in inspector.get_columns("user_ontologies")}
+        if "draft_id" not in ontology_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_ontologies ADD COLUMN draft_id VARCHAR(36)"))
     if "audit_events" in table_names:
         audit_columns = {column["name"] for column in inspector.get_columns("audit_events")}
         additions = {
