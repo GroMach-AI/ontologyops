@@ -1,4 +1,20 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
+
+# Auto-load persisted local secrets (.env) at startup so model API keys
+# survive backend restarts. The env file is written by /api/models/{id}/local-secret.
+_env_file = Path(os.getenv("ONTOLOGYOPS_ENV_FILE", "../.env")).resolve()
+if _env_file.exists():
+    for line in _env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
 
 from app.api.data_sources import dataset_router, router as data_sources_router
 from app.api.ontology import router as ontology_router
