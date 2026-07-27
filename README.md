@@ -88,20 +88,6 @@ npm run lint
 npm run build
 ```
 
-## 当前不做
-
-- 写回、审批、自动 Action 或自动任务
-- 通用 BI、风险驾驶舱、多租户
-- 自由 text-to-SQL
-- 生产级调度、多源连接器、规模化计算与完整权限体系
-
-## 项目文档
-
-- [PRD](docs/01-PRD.md)
-- [技术方案](docs/02-Technical-Design.md)
-- [项目进度状态](docs/03-Project-Status.md)
-- [开发版本控制规则](docs/04-Development-Version-Control.md)
-
 ## 许可证
 
 本项目采用 [MIT License](LICENSE)。
