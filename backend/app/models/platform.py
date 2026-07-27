@@ -139,3 +139,33 @@ class UserOntology(Base):
     entities_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     relationships_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class OntologyDraftRecord(Base):
+    __tablename__ = "ontology_drafts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(512), nullable=False)
+    definition_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="editing", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class OntologyReleaseRecord(Base):
+    __tablename__ = "ontology_releases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ontology_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    semantic_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    manifest_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="published", nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class CurrentOntologyRelease(Base):
+    __tablename__ = "current_ontology_releases"
+
+    ontology_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    release_id: Mapped[str] = mapped_column(String(36), nullable=False)

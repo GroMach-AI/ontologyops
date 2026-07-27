@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import runtime_metadata_engine
 from app.models.platform import UserOntology
+from app.domain.ontology_release import OntologyReleaseService
 from app.services.model_provider import ModelProviderService
 
 router = APIRouter(prefix="/api/ontology-drafts", tags=["ontology-drafts"])
@@ -412,6 +413,39 @@ class SaveOntologyRequest(BaseModel):
     rules: int = 0
     entities: list[dict] = []
     relationships: list[dict] = []
+
+
+class OntologyDraftRequest(BaseModel):
+    name: str
+    scope: str
+    entities: list[dict]
+    relationships: list[dict] = []
+    mappings: list[dict] = []
+    candidate_decisions: list[dict] = []
+
+
+@router.post("", status_code=201)
+def create_ontology_draft(request: OntologyDraftRequest) -> dict[str, object]:
+    definition = request.model_dump()
+    return OntologyReleaseService(runtime_metadata_engine()).create_draft(definition)
+
+
+@router.post("/{draft_id}/validate")
+def validate_ontology_draft(draft_id: str) -> dict[str, object]:
+    try:
+        return OntologyReleaseService(runtime_metadata_engine()).validate(draft_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/{draft_id}/publish", status_code=201)
+def publish_ontology_draft(draft_id: str) -> dict[str, object]:
+    try:
+        return OntologyReleaseService(runtime_metadata_engine()).publish(draft_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=json.loads(str(error))) from error
 
 
 @router.post("/list")
