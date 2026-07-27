@@ -7,7 +7,7 @@ from io import StringIO
 from uuid import uuid4
 
 import pandas as pd
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.core.database import runtime_metadata_engine
 from app.models.platform import UserOntology
 from app.domain.ontology_release import OntologyReleaseService
 from app.services.model_provider import ModelProviderService
+from app.domain.authorization import require_resource_access
 
 router = APIRouter(prefix="/api/ontology-drafts", tags=["ontology-drafts"])
 
@@ -439,9 +440,12 @@ def validate_ontology_draft(draft_id: str) -> dict[str, object]:
 
 
 @router.post("/{draft_id}/publish", status_code=201)
-def publish_ontology_draft(draft_id: str) -> dict[str, object]:
+def publish_ontology_draft(draft_id: str, x_demo_role: str = Header(default="modeler")) -> dict[str, object]:
+    engine = runtime_metadata_engine()
+    if not require_resource_access(engine, x_demo_role, "ontology", "publish_ontology"):
+        raise HTTPException(status_code=403, detail="Role is not allowed to publish ontology")
     try:
-        return OntologyReleaseService(runtime_metadata_engine()).publish(draft_id)
+        return OntologyReleaseService(engine).publish(draft_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:

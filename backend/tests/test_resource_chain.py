@@ -123,3 +123,11 @@ def test_mapping_with_unknown_source_field_blocks_release(tmp_path: Path, monkey
 
     assert validation.json()["valid"] is False
     assert validation.json()["blockers"][0]["code"] == "mapping_source_field_missing"
+
+
+def test_removed_legacy_routes_are_not_registered() -> None:
+    paths = {route.path for route in app.routes}
+
+    assert "/api/ontology/publish-factory" not in paths
+    assert "/api/ontology/candidates" not in paths
+    assert "/api/sources/mysql" not in paths

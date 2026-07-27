@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import re
 from dataclasses import asdict, dataclass
 from io import BytesIO
 from pathlib import Path
@@ -10,7 +8,6 @@ from uuid import uuid4
 
 import duckdb
 import pandas as pd
-import pymysql
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
@@ -174,7 +171,7 @@ class PipelineService:
             filename = source.name
             kind = source.kind
             config = json.loads(source.config_json)
-        if kind not in {"csv", "xlsx", "mysql"}:
+        if kind not in {"csv", "xlsx"}:
             raise ValueError("Only structured sources can run a data pipeline")
 
         run_id = str(uuid4())
@@ -325,30 +322,7 @@ class PipelineService:
         return pd.read_csv(path)
 
     def _read_registered_dataframe(self, config: dict[str, object], kind: str) -> pd.DataFrame:
-        if kind in {"csv", "xlsx"}:
-            return self._read_dataframe(Path(str(config["path"])), kind)
-        table = str(config.get("table", ""))
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
-            raise ValueError("Invalid MySQL table name")
-        password = os.getenv(str(config.get("password_env", "")))
-        if not password:
-            raise ValueError("MySQL password environment variable is not configured")
-        connection = pymysql.connect(
-            host=str(config["host"]),
-            port=int(config["port"]),
-            user=str(config["username"]),
-            password=password,
-            database=str(config["database"]),
-            connect_timeout=5,
-            read_timeout=10,
-        )
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(f"SELECT * FROM `{table}`")
-                columns = [column[0] for column in cursor.description]
-                return pd.DataFrame(cursor.fetchall(), columns=columns)
-        finally:
-            connection.close()
+        return self._read_dataframe(Path(str(config["path"])), kind)
 
 
 def _safe_filename(filename: str) -> str:

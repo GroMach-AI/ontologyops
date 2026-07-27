@@ -24,7 +24,7 @@ def test_excel_upload_runs_fixed_pipeline(tmp_path, monkeypatch) -> None:
     )
 
     assert response.status_code == 201
-    assert response.json()["status"] == "ready"
+    assert response.json()["lifecycle_status"] == "profiled"
     run = client.post(f"/api/pipelines/{response.json()['pipeline_id']}/run", json={})
     assert run.status_code == 200
     assert run.json()["preview"]["row_count"] == 1

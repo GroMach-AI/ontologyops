@@ -27,7 +27,7 @@ def test_pipeline_runs_fixed_six_stage_flow(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 201
     body = response.json()
-    assert body["status"] == "ready"
+    assert body["lifecycle_status"] == "profiled"
     run = client.post(f"/api/pipelines/{body['pipeline_id']}/run", json={})
     assert run.status_code == 200
     result = run.json()
