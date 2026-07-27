@@ -242,13 +242,11 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .oo-graph-entity-meta { margin-top:2px; color:oklch(0.63 0.015 155); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* canvas */
-.oo-graph-canvas-wrap { position:relative; min-width:0; background:oklch(0.982 0.004 145); overflow:auto; }
-.oo-graph-canvas { position:relative; width:920px; height:560px; overflow:hidden; transform-origin:0 0; flex-shrink:0; }
-.oo-graph-canvas.is-zoomed { cursor:grab; }
-.oo-graph-canvas.is-zoomed:active { cursor:grabbing; }
+.oo-graph-canvas-wrap { position:relative; min-width:0; background:oklch(0.982 0.004 145); overflow:auto; height:560px; }
+.oo-graph-canvas { position:relative; overflow:hidden; transform-origin:0 0; flex-shrink:0; }
 .oo-graph-canvas-bg { position:absolute; inset:0; background:radial-gradient(circle at 20% 20%, oklch(0.97 0.04 160) 0%, transparent 40%), radial-gradient(circle at 82% 75%, oklch(0.97 0.04 220) 0%, transparent 40%), radial-gradient(circle at 48% 95%, oklch(0.97 0.04 80) 0%, transparent 35%); }
 .oo-graph-canvas-grid { position:absolute; inset:0; background-image:linear-gradient(0deg, oklch(0.96 0.005 155) 1px, transparent 1px), linear-gradient(90deg, oklch(0.96 0.005 155) 1px, transparent 1px); background-size:30px 30px; opacity:.5; }
-.oo-graph-svg { position:absolute; inset:0; width:920px; height:560px; pointer-events:none; }
+.oo-graph-svg { position:absolute; inset:0; pointer-events:none; }
 .oo-graph-edge-label-svg { fill:oklch(0.23 0.018 155); font-size:11px; font-weight:600; }
 .oo-graph-edge-desc-svg { fill:oklch(0.48 0.018 155); font-size:10px; }
 
@@ -312,5 +310,4 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 
 @media (max-width:1120px) {
   .oo-graph-view { grid-template-columns:200px minmax(0,1fr) 300px; }
-  .oo-graph-canvas { height:480px; }
 }

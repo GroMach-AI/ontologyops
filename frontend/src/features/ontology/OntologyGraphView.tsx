@@ -21,6 +21,9 @@ const ENTITY_PALETTE = [
 const CANVAS_WIDTH = 920;
 const CANVAS_HEIGHT = 560;
 const BUBBLE_DIAMETER = 88;
+// 真实画布坐标系是 viewport 的 2 倍，确保缩放和平移总有空间
+const WORLD_WIDTH = CANVAS_WIDTH * 2;
+const WORLD_HEIGHT = CANVAS_HEIGHT * 2;
 
 function colorForEntity(index: number): string {
   return ENTITY_PALETTE[index % ENTITY_PALETTE.length];
@@ -37,20 +40,20 @@ function cardinalityLabel(type: string): string {
 function autoLayout(entities: OntologyEntity[]): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {};
   if (entities.length === 0) return positions;
-  // hub-style: middle entity at center, others on a ring
+  // hub-style: middle entity at center, others on a ring (in world coordinates)
   const hub = entities[Math.floor(entities.length / 2)];
-  positions[hub.name] = { x: CANVAS_WIDTH / 2 - BUBBLE_DIAMETER / 2, y: CANVAS_HEIGHT / 2 - BUBBLE_DIAMETER / 2 };
+  positions[hub.name] = { x: WORLD_WIDTH / 2 - BUBBLE_DIAMETER / 2, y: WORLD_HEIGHT / 2 - BUBBLE_DIAMETER / 2 };
   const ring = entities.filter((entity) => entity.name !== hub.name);
-  const cx = CANVAS_WIDTH / 2 - BUBBLE_DIAMETER / 2;
-  const cy = CANVAS_HEIGHT / 2 - BUBBLE_DIAMETER / 2;
-  const radius = Math.min(CANVAS_WIDTH, CANVAS_HEIGHT) * 0.32;
+  const cx = WORLD_WIDTH / 2 - BUBBLE_DIAMETER / 2;
+  const cy = WORLD_HEIGHT / 2 - BUBBLE_DIAMETER / 2;
+  const radius = Math.min(WORLD_WIDTH, WORLD_HEIGHT) * 0.30;
   ring.forEach((entity, index) => {
     const angle = -Math.PI / 2 + (index * (Math.PI * 2 / ring.length));
     const x = cx + Math.cos(angle) * radius;
     const y = cy + Math.sin(angle) * radius;
     positions[entity.name] = {
-      x: Math.max(8, Math.min(CANVAS_WIDTH - BUBBLE_DIAMETER - 8, x)),
-      y: Math.max(8, Math.min(CANVAS_HEIGHT - BUBBLE_DIAMETER - 28, y)),
+      x: Math.max(8, Math.min(WORLD_WIDTH - BUBBLE_DIAMETER - 8, x)),
+      y: Math.max(8, Math.min(WORLD_HEIGHT - BUBBLE_DIAMETER - 28, y)),
     };
   });
   return positions;
@@ -60,15 +63,17 @@ function defaultPositions(entities: OntologyEntity[]): Record<string, { x: numbe
   const positions: Record<string, { x: number; y: number }> = {};
   entities.forEach((entity, index) => {
     if (entities.length === 1) {
-      positions[entity.name] = { x: CANVAS_WIDTH / 2 - BUBBLE_DIAMETER / 2, y: CANVAS_HEIGHT / 2 - BUBBLE_DIAMETER / 2 };
+      positions[entity.name] = { x: WORLD_WIDTH / 2 - BUBBLE_DIAMETER / 2, y: WORLD_HEIGHT / 2 - BUBBLE_DIAMETER / 2 };
       return;
     }
-    // 4-across grid fallback when auto-layout doesn't fit
+    // grid layout in world coordinates
     const cols = Math.min(3, entities.length);
     const row = Math.floor(index / cols);
     const col = index % cols;
-    const x = 60 + col * 280;
-    const y = 60 + row * 220;
+    const cellW = (WORLD_WIDTH - 120) / cols;
+    const cellH = (WORLD_HEIGHT - 120) / Math.ceil(entities.length / cols);
+    const x = 60 + col * cellW + (cellW - BUBBLE_DIAMETER) / 2;
+    const y = 60 + row * cellH + (cellH - BUBBLE_DIAMETER - 30) / 2;
     positions[entity.name] = { x, y };
   });
   return positions;
@@ -86,6 +91,7 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
   const [selectedName, setSelectedName] = useState<string>(initialSelected ?? entities[0]?.name ?? "");
   const [sideTab, setSideTab] = useState<"struct" | "rows" | "rels">("struct");
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const ZOOM_MIN = 0.5;
   const ZOOM_MAX = 2.0;
   const ZOOM_STEP = 0.2;
@@ -97,7 +103,8 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
   }, [entities, initialPositions, initialSelected]);
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ key: string; offsetX: number; offsetY: number } | null>(null);
+  const dragRef = useRef<{ key: string; offsetX: number; offsetY: number; originX: number; originY: number } | null>(null);
+  const panRef = useRef<{ startX: number; startY: number; initialPan: { x: number; y: number } } | null>(null);
 
   const selectedEntity = useMemo<SelectedEntity | null>(() => {
     if (entities.length === 0) return null;
@@ -124,13 +131,14 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
 
   function startDrag(event: React.MouseEvent, key: string) {
     if (!canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
     const pos = positions[key];
     if (!pos) return;
     dragRef.current = {
       key,
-      offsetX: event.clientX - rect.left - pos.x,
-      offsetY: event.clientY - rect.top - pos.y,
+      offsetX: event.clientX,
+      offsetY: event.clientY,
+      originX: pos.x,
+      originY: pos.y,
     };
     event.preventDefault();
     event.stopPropagation();
@@ -139,12 +147,12 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
   useEffect(() => {
     function onMove(event: MouseEvent) {
       if (!dragRef.current || !canvasRef.current) return;
-      const rect = canvasRef.current.getBoundingClientRect();
-      const { key, offsetX, offsetY } = dragRef.current;
-      const pos = positions[key];
-      if (!pos) return;
-      const nextX = Math.max(0, Math.min(canvasRef.current.clientWidth - BUBBLE_DIAMETER, event.clientX - rect.left - offsetX));
-      const nextY = Math.max(0, Math.min(canvasRef.current.clientHeight - BUBBLE_DIAMETER - 16, event.clientY - rect.top - offsetY));
+      const { key, offsetX, offsetY, originX, originY } = dragRef.current;
+      // screen delta divided by zoom to keep bubble glued to cursor across zoom levels
+      const dx = (event.clientX - offsetX) / zoom;
+      const dy = (event.clientY - offsetY) / zoom;
+      const nextX = Math.max(0, Math.min(WORLD_WIDTH - BUBBLE_DIAMETER, originX + dx));
+      const nextY = Math.max(0, Math.min(WORLD_HEIGHT - BUBBLE_DIAMETER - 16, originY + dy));
       setPositions((prev) => ({ ...prev, [key]: { x: nextX, y: nextY } }));
     }
     function onUp() {
@@ -156,7 +164,7 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
-  }, [positions]);
+  }, [positions, zoom]);
 
   function resetLayout() {
     setPositions(defaultPositions(entities));
@@ -167,13 +175,33 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
   }
 
   function zoomIn() {
-    setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
+    setZoom((z) => {
+      const next = Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2));
+      clampPanForZoom(next);
+      return next;
+    });
   }
   function zoomOut() {
-    setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)));
+    setZoom((z) => {
+      const next = Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2));
+      clampPanForZoom(next);
+      return next;
+    });
   }
   function zoomReset() {
     setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }
+  const worldTransform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+  function clampPanForZoom(currentZoom: number) {
+    setPan((current) => {
+      const maxX = (WORLD_WIDTH * currentZoom - CANVAS_WIDTH) / 2 + 100;
+      const maxY = (WORLD_HEIGHT * currentZoom - CANVAS_HEIGHT) / 2 + 100;
+      return {
+        x: Math.max(-maxX, Math.min(maxX, current.x)),
+        y: Math.max(-maxY, Math.min(maxY, current.y)),
+      };
+    });
   }
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
     if (!event.ctrlKey && !event.metaKey) return;
@@ -181,6 +209,39 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
     if (event.deltaY < 0) zoomIn();
     else zoomOut();
   }
+  function startPan(event: React.MouseEvent<HTMLDivElement>) {
+    // Only pan if user clicks on canvas background (not on a bubble or toolbar)
+    const target = event.target as HTMLElement;
+    if (target.closest(".oo-graph-node")) return;
+    if (target.closest(".oo-graph-toolbar")) return;
+    if (target.closest(".oo-graph-tip")) return;
+    panRef.current = { startX: event.clientX, startY: event.clientY, initialPan: { ...pan } };
+    event.preventDefault();
+  }
+  useEffect(() => {
+    function onMove(event: MouseEvent) {
+      // 拖拽气泡 (drag) 优先
+      if (dragRef.current) return;
+      if (!panRef.current) return;
+      const dx = event.clientX - panRef.current.startX;
+      const dy = event.clientY - panRef.current.startY;
+      const maxX = (WORLD_WIDTH * zoom - CANVAS_WIDTH) / 2 + 100;
+      const maxY = (WORLD_HEIGHT * zoom - CANVAS_HEIGHT) / 2 + 100;
+      setPan({
+        x: Math.max(-maxX, Math.min(maxX, panRef.current.initialPan.x + dx)),
+        y: Math.max(-maxY, Math.min(maxY, panRef.current.initialPan.y + dy)),
+      });
+    }
+    function onUp() {
+      panRef.current = null;
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [pan, zoom]);
 
   if (entities.length === 0) {
     return (
@@ -233,21 +294,22 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
       {/* CENTER: 图谱画布 */}
       <div className="oo-graph-canvas-wrap">
         <div
-          className={zoom !== 1 ? "oo-graph-canvas is-zoomed" : "oo-graph-canvas"}
+          className="oo-graph-canvas"
           ref={canvasRef}
           role="region"
           aria-label="本体图谱画布"
-          style={{ transform: `scale(${zoom})` }}
+          style={{ transform: worldTransform, width: WORLD_WIDTH, height: WORLD_HEIGHT, cursor: panRef.current ? "grabbing" : "grab" }}
           onWheel={handleWheel}
+          onMouseDown={startPan}
         >
           <div className="oo-graph-canvas-bg" />
           <div className="oo-graph-canvas-grid" />
           {/* 连线（SVG 层） */}
           <svg
             className="oo-graph-svg"
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
+            width={WORLD_WIDTH}
+            height={WORLD_HEIGHT}
+            viewBox={`0 0 ${WORLD_WIDTH} ${WORLD_HEIGHT}`}
             xmlns="http://www.w3.org/2000/svg"
             aria-hidden="true"
           >
@@ -343,7 +405,7 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
           </div>
 
           <div className="oo-graph-tip">
-            <b>拖拽</b>移动气泡 · <b>单击</b>查看属性 · <b>悬停</b>看关系说明
+            <b>拖拽气泡</b>改变位置 · <b>空白处拖拽</b>平移画布 · <b>Ctrl/Cmd + 滚轮</b>缩放
           </div>
         </div>
       </div>

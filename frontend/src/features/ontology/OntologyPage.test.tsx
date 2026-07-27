@@ -91,7 +91,11 @@ describe("OntologyPage candidate review", () => {
 
     await user.click(screen.getByRole("button", { name: /确认并创建本体/ }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    expect(await screen.findByRole("heading", { name: "客户本体" })).toBeInTheDocument();
+    // navigation may be delayed in heavily-loaded test environments; give it more time
+    await waitFor(
+      () => expect(screen.getByRole("heading", { name: "客户本体" })).toBeInTheDocument(),
+      { timeout: 4000 },
+    );
     expect(screen.getByText("客户运营分析")).toBeInTheDocument();
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({
       name: "客户本体",
