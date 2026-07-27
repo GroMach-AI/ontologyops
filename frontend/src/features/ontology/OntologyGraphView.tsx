@@ -422,62 +422,69 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
               <span className="oo-graph-side-cn">{selectedEntity.entity.name} · {selectedEntity.entity.properties.length} 属性 · {selectedEntity.entity.source_file || "未映射数据源"}</span>
               <p>{selectedEntity.entity.description || "尚未补充业务定义。"}</p>
             </div>
+            <div className="oo-graph-side-stats">
+              <div><strong>{selectedEntity.entity.properties.length}</strong><span>属性</span></div>
+              <div><strong>{selectedEntity.entity.properties.filter((property) => property.is_key).length}</strong><span>主键</span></div>
+              <div><strong>{relatedEdges.length}</strong><span>关联关系</span></div>
+            </div>
             <div className="oo-graph-side-tabs">
               <button type="button" className={sideTab === "struct" ? "is-active" : ""} onClick={() => setSideTab("struct")}>结构</button>
               <button type="button" className={sideTab === "rows" ? "is-active" : ""} onClick={() => setSideTab("rows")}>表数据</button>
               <button type="button" className={sideTab === "rels" ? "is-active" : ""} onClick={() => setSideTab("rels")}>相关关系</button>
             </div>
 
-            {sideTab === "struct" ? (
-              <div className="oo-graph-side-section">
-                <h4>属性 · {selectedEntity.entity.properties.length}</h4>
-                <div className="oo-graph-field-row oo-graph-field-row-head">
-                  <div>字段</div>
-                  <div style={{ textAlign: "center" }}>类型</div>
-                  <div>说明</div>
-                </div>
-                {selectedEntity.entity.properties.length > 0 ? selectedEntity.entity.properties.map((property, index) => (
-                  <div className="oo-graph-field-row" key={`${property.name}-${index}`}>
-                    <div className="oo-graph-field-name">
-                      {property.is_key ? <span className="oo-graph-tag">PK</span> : null}
-                      <code>{property.name}</code>
-                    </div>
-                    <div className="oo-graph-field-type">{property.type}</div>
-                    <div className="oo-graph-field-desc">{property.description || "—"}</div>
+            <div className="oo-graph-side-body">
+              {sideTab === "struct" ? (
+                <div className="oo-graph-side-section">
+                  <h4>属性 · {selectedEntity.entity.properties.length}</h4>
+                  <div className="oo-graph-field-row oo-graph-field-row-head">
+                    <div>字段</div>
+                    <div style={{ textAlign: "center" }}>类型</div>
+                    <div>说明</div>
                   </div>
-                )) : <div className="oo-graph-empty-mini">暂无属性</div>}
-              </div>
-            ) : null}
-
-            {sideTab === "rels" ? (
-              <div className="oo-graph-side-section">
-                <h4>相邻关系 · {relatedEdges.length}</h4>
-                {relatedEdges.length > 0 ? (
-                  <div className="oo-graph-rel-list">
-                    {relatedEdges.map((rel, index) => (
-                      <div className="oo-graph-rel-row" key={`${rel.name}-${index}`}>
-                        <span className="oo-graph-rel-from">{rel.from_entity}</span>
-                        <i className="ph ph-arrows-left-right" aria-hidden="true" />
-                        <span className="oo-graph-rel-to">
-                          {rel.to_entity}
-                          <em>{cardinalityLabel(rel.type)}</em>
-                        </span>
+                  {selectedEntity.entity.properties.length > 0 ? selectedEntity.entity.properties.map((property, index) => (
+                    <div className="oo-graph-field-row" key={`${property.name}-${index}`}>
+                      <div className="oo-graph-field-name">
+                        {property.is_key ? <span className="oo-graph-tag">PK</span> : null}
+                        <code>{property.name}</code>
                       </div>
-                    ))}
-                  </div>
-                ) : <div className="oo-graph-empty-mini">暂无相邻关系</div>}
-              </div>
-            ) : null}
-
-            {sideTab === "rows" ? (
-              <div className="oo-graph-side-section">
-                <h4>表数据预览</h4>
-                <div className="oo-graph-rows-note">
-                  <i className="ph ph-info" aria-hidden="true" />
-                  完整表结构查看需要在「实体 → 对象映射」中接入已发布的数据集资源。
+                      <div className="oo-graph-field-type">{property.type}</div>
+                      <div className="oo-graph-field-desc">{property.description || "—"}</div>
+                    </div>
+                  )) : <div className="oo-graph-empty-mini">暂无属性</div>}
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+
+              {sideTab === "rels" ? (
+                <div className="oo-graph-side-section">
+                  <h4>相邻关系 · {relatedEdges.length}</h4>
+                  {relatedEdges.length > 0 ? (
+                    <div className="oo-graph-rel-list">
+                      {relatedEdges.map((rel, index) => (
+                        <div className="oo-graph-rel-row" key={`${rel.name}-${index}`}>
+                          <span className="oo-graph-rel-from">{rel.from_entity}</span>
+                          <i className="ph ph-arrows-left-right" aria-hidden="true" />
+                          <span className="oo-graph-rel-to">
+                            {rel.to_entity}
+                            <em>{cardinalityLabel(rel.type)}</em>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <div className="oo-graph-empty-mini">暂无相邻关系</div>}
+                </div>
+              ) : null}
+
+              {sideTab === "rows" ? (
+                <div className="oo-graph-side-section">
+                  <h4>表数据预览</h4>
+                  <div className="oo-graph-rows-note">
+                    <i className="ph ph-info" aria-hidden="true" />
+                    完整表结构查看需要在「实体 → 对象映射」中接入已发布的数据集资源。
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </>
         ) : (
           <div className="oo-graph-side-empty">

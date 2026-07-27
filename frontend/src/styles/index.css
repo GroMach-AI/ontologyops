@@ -64,8 +64,8 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .oo-sidebar-foot strong { display: block; color: oklch(0.48 0.018 155); font-size: 13px; }
 .oo-sidebar-foot select { min-height: 30px; padding: 4px 6px; border: 1px solid oklch(0.82 0.014 155); border-radius: 5px; background: #fff; color: oklch(0.23 0.018 155); font-size: 12px; }
 .oo-shell main { min-width: 0; padding: 24px 32px 36px; overflow-y: auto; }
-.oo-page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
-.oo-page-heading h1 { margin: 4px 0 0; font-size: 28px; letter-spacing: -.035em; line-height: 1.12; }
+.oo-page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+.oo-page-heading h1 { margin: 4px 0 0; font-size: 24px; letter-spacing: -.035em; line-height: 1.12; }
 .oo-eyebrow { display: block; color: oklch(0.45 0.115 160); font-size: 12px; font-weight: 750; letter-spacing: .035em; }
 @media (max-width: 1120px) { .oo-shell { grid-template-columns: 180px minmax(0, 1fr); } .oo-shell main { padding: 26px 24px 42px; } }
 
@@ -218,7 +218,7 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 @media (max-width:1120px) { .oo-detail-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .oo-detail-model-layout { grid-template-columns:minmax(0,1fr) 260px; } }
 
 /* === Ontology graph view === */
-.oo-graph-view { display:grid; grid-template-columns:200px minmax(0,1fr) 400px; min-height:560px; border:1px solid oklch(0.9 0.01 155); border-radius:10px; overflow:hidden; background:#fff; }
+.oo-graph-view { display:grid; grid-template-columns:200px minmax(0,1fr) 460px; height:calc(100vh - 240px); min-height:600px; border:1px solid oklch(0.9 0.01 155); border-radius:10px; overflow:hidden; background:#fff; }
 .oo-graph-empty { grid-column:1 / -1; padding:80px 24px; text-align:center; color:oklch(0.48 0.018 155); }
 .oo-graph-empty > i { display:block; font-size:42px; color:oklch(0.82 0.014 155); margin-bottom:12px; }
 .oo-graph-empty strong { display:block; font-size:15px; color:oklch(0.23 0.018 155); }
@@ -242,7 +242,7 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .oo-graph-entity-meta { margin-top:2px; color:oklch(0.63 0.015 155); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* canvas */
-.oo-graph-canvas-wrap { position:relative; min-width:0; background:oklch(0.982 0.004 145); overflow:auto; height:560px; }
+.oo-graph-canvas-wrap { position:relative; min-width:0; background:oklch(0.982 0.004 145); overflow:auto; min-height:100%; }
 .oo-graph-canvas { position:relative; overflow:hidden; transform-origin:0 0; flex-shrink:0; }
 .oo-graph-canvas-bg { position:absolute; inset:0; background:radial-gradient(circle at 20% 20%, oklch(0.97 0.04 160) 0%, transparent 40%), radial-gradient(circle at 82% 75%, oklch(0.97 0.04 220) 0%, transparent 40%), radial-gradient(circle at 48% 95%, oklch(0.97 0.04 80) 0%, transparent 35%); }
 .oo-graph-canvas-grid { position:absolute; inset:0; background-image:linear-gradient(0deg, oklch(0.96 0.005 155) 1px, transparent 1px), linear-gradient(90deg, oklch(0.96 0.005 155) 1px, transparent 1px); background-size:30px 30px; opacity:.5; }
@@ -271,19 +271,24 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .oo-graph-tip b { color:oklch(0.45 0.115 160); }
 
 /* right side */
-.oo-graph-side { border-left:1px solid oklch(0.9 0.01 155); background:#fff; overflow-y:auto; min-width:0; }
-.oo-graph-side-head { padding:18px; border-bottom:1px solid oklch(0.9 0.01 155); }
-.oo-graph-side-pill { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:13px; font-size:11px; font-weight:660; margin-bottom:8px; }
-.oo-graph-side-head h2 { margin:0; font-size:16px; letter-spacing:-.02em; color:oklch(0.23 0.018 155); }
-.oo-graph-side-cn { display:block; margin-top:4px; font-size:11px; color:oklch(0.63 0.015 155); }
-.oo-graph-side-head p { margin:9px 0 0; font-size:12px; line-height:1.5; color:oklch(0.48 0.018 155); }
-.oo-graph-side-tabs { display:flex; gap:4px; padding:10px 18px 0; border-bottom:1px solid oklch(0.9 0.01 155); }
-.oo-graph-side-tabs button { height:28px; padding:0 10px; border:1px solid transparent; border-radius:5px; background:transparent; font-size:11px; color:oklch(0.48 0.018 155); cursor:pointer; font-weight:620; }
+.oo-graph-side { border-left:1px solid oklch(0.9 0.01 155); background:#fff; overflow-y:auto; min-width:0; display:flex; flex-direction:column; }
+.oo-graph-side-head { padding:20px 22px; border-bottom:1px solid oklch(0.9 0.01 155); background:linear-gradient(180deg, oklch(0.985 0.02 160) 0%, #fff 100%); }
+.oo-graph-side-pill { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:13px; font-size:11px; font-weight:660; margin-bottom:10px; }
+.oo-graph-side-head h2 { margin:0; font-size:18px; letter-spacing:-.025em; color:oklch(0.23 0.018 155); }
+.oo-graph-side-cn { display:block; margin-top:5px; font-size:11px; color:oklch(0.63 0.015 155); }
+.oo-graph-side-head p { margin:10px 0 0; font-size:12px; line-height:1.55; color:oklch(0.48 0.018 155); }
+.oo-graph-side-tabs { display:flex; gap:4px; padding:10px 22px 0; border-bottom:1px solid oklch(0.9 0.01 155); }
+.oo-graph-side-tabs button { height:30px; padding:0 12px; border:1px solid transparent; border-radius:5px; background:transparent; font-size:11px; color:oklch(0.48 0.018 155); cursor:pointer; font-weight:620; }
 .oo-graph-side-tabs button:hover { color:oklch(0.23 0.018 155); }
 .oo-graph-side-tabs button.is-active { border-color:oklch(0.82 0.014 155); background:#fff; color:oklch(0.45 0.115 160); font-weight:720; }
-
-.oo-graph-side-section { padding:14px 18px; border-bottom:1px solid oklch(0.9 0.01 155); }
-.oo-graph-side-section h4 { margin:0 0 9px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:oklch(0.63 0.015 155); font-weight:720; }
+.oo-graph-side-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; padding:14px 22px; border-bottom:1px solid oklch(0.9 0.01 155); background:#fff; }
+.oo-graph-side-stats > div { display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 0; position:relative; }
+.oo-graph-side-stats > div + div::before { content:""; position:absolute; left:0; top:8px; bottom:8px; width:1px; background:oklch(0.92 0.01 155); }
+.oo-graph-side-stats strong { font-size:18px; font-weight:760; color:oklch(0.23 0.018 155); letter-spacing:-.02em; }
+.oo-graph-side-stats span { font-size:10px; color:oklch(0.63 0.015 155); }
+.oo-graph-side-body { flex:1; overflow-y:auto; }
+.oo-graph-side-section { padding:16px 22px; border-bottom:1px solid oklch(0.9 0.01 155); }
+.oo-graph-side-section h4 { margin:0 0 10px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:oklch(0.63 0.015 155); font-weight:720; }
 .oo-graph-field-row { display:grid; grid-template-columns:1fr 90px 1.2fr; gap:6px; align-items:center; padding:0 10px; min-height:36px; border-left:1px solid oklch(0.9 0.01 155); border-right:1px solid oklch(0.9 0.01 155); border-bottom:1px solid oklch(0.9 0.01 155); background:#fff; font-size:11.5px; }
 .oo-graph-field-row:first-of-type { border-top:1px solid oklch(0.9 0.01 155); }
 .oo-graph-field-row.oo-graph-field-row-head { background:oklch(0.985 0.005 155); font-size:10px; color:oklch(0.63 0.015 155); text-transform:uppercase; letter-spacing:.04em; font-weight:700; min-height:30px; }
