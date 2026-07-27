@@ -47,6 +47,7 @@ class LocalSecretRequest(BaseModel):
 class VerifyModelRequest(BaseModel):
     api_key: str | None = Field(default=None, min_length=8, max_length=1024)
     model_name: str | None = Field(default=None, min_length=1, max_length=128)
+    base_url: str | None = Field(default=None, max_length=512)
 
 
 def _ensure_defaults() -> list[ModelProviderConfig]:
@@ -64,6 +65,9 @@ def _ensure_defaults() -> list[ModelProviderConfig]:
                     ModelProviderConfig(
                         id=str(uuid4()), provider="DeepSeek", model_name="deepseek-v4-flash", enabled="false", is_default="false", base_url="https://api.deepseek.com", api_key_env="DEEPSEEK_API_KEY", temperature="0", max_tokens=4096
                     ),
+                    ModelProviderConfig(
+                        id=str(uuid4()), provider="Compatible", model_name="custom-model", enabled="false", is_default="false", base_url="", api_key_env="COMPATIBLE_API_KEY", temperature="0", max_tokens=4096
+                    ),
                 ]
             )
             session.commit()
@@ -74,6 +78,8 @@ def _ensure_defaults() -> list[ModelProviderConfig]:
             additions.append(ModelProviderConfig(id=str(uuid4()), provider="GPT", model_name="gpt-4.1-mini", enabled="false", is_default="false", base_url="https://api.openai.com/v1", api_key_env="OPENAI_API_KEY", temperature="0", max_tokens=1024))
         if "DeepSeek" not in existing:
             additions.append(ModelProviderConfig(id=str(uuid4()), provider="DeepSeek", model_name="deepseek-v4-flash", enabled="false", is_default="false", base_url="https://api.deepseek.com", api_key_env="DEEPSEEK_API_KEY", temperature="0", max_tokens=4096))
+        if "Compatible" not in existing:
+            additions.append(ModelProviderConfig(id=str(uuid4()), provider="Compatible", model_name="custom-model", enabled="false", is_default="false", base_url="", api_key_env="COMPATIBLE_API_KEY", temperature="0", max_tokens=4096))
         if additions:
             session.add_all(additions)
             session.commit()
@@ -201,6 +207,8 @@ def verify_model(provider_id: str, request: VerifyModelRequest | None = None, x_
         else:
             if request and request.model_name:
                 item.model_name = request.model_name
+            if request and request.base_url is not None:
+                item.base_url = request.base_url.strip().rstrip("/")
             success, error = ModelProviderService(engine).verify(item, request.api_key if request else None)
             item.verification_status = "verified" if success else "failed"
             item.last_error = error

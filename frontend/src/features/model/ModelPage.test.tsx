@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ModelPage } from "./ModelPage";
 
 const deepseek = { id: "deepseek", provider: "DeepSeek", model_name: "deepseek-v4-flash", enabled: false, is_default: false, base_url: "https://api.deepseek.com", api_key_env: "DEEPSEEK_API_KEY", temperature: 0, max_tokens: 4096, agent_enabled: true, modeling_enabled: true, verification_status: "unconfigured", last_error: null, available_models: [{ id: "deepseek-v4-flash", label: "DeepSeek V4 Flash" }, { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro" }] };
+const compatible = { id: "compatible", provider: "Compatible", model_name: "custom-model", enabled: false, is_default: false, base_url: "", api_key_env: "COMPATIBLE_API_KEY", temperature: 0, max_tokens: 4096, agent_enabled: true, modeling_enabled: true, verification_status: "unconfigured", last_error: null, available_models: [] };
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -27,6 +28,26 @@ it("removes the redundant model-access heading while retaining the selected prov
   expect(screen.queryByRole("heading", { name: "模型接入" })).not.toBeInTheDocument();
 });
 
+it("labels the GPT provider as ChatGPT", async () => {
+  const gpt = { ...deepseek, id: "gpt", provider: "GPT", model_name: "gpt-4.1-mini", base_url: "https://api.openai.com/v1", available_models: [{ id: "gpt-4.1-mini", label: "GPT-4.1 mini" }] };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [deepseek, gpt] }) }));
+  render(<ModelPage role="admin" />);
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole("button", { name: /ChatGPT/ }));
+
+  expect(await screen.findByRole("heading", { name: "ChatGPT" })).toBeInTheDocument();
+});
+
+it("uses a bundled DeepSeek mark instead of a remote image", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [deepseek] }) }));
+  render(<ModelPage role="admin" />);
+
+  const marks = await screen.findAllByAltText("DeepSeek");
+  expect(marks).not.toHaveLength(0);
+  expect(marks.every((mark) => mark.getAttribute("src") === "/assets/deepseek-mark.svg")).toBe(true);
+});
+
 it("keeps a model choice local until connection testing", async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [deepseek] }) });
   vi.stubGlobal("fetch", fetchMock);
@@ -34,6 +55,19 @@ it("keeps a model choice local until connection testing", async () => {
   const user = userEvent.setup();
   await user.selectOptions(await screen.findByRole("combobox", { name: "选择模型" }), "deepseek-v4-pro");
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("shows an independent OpenAI-compatible configuration after selecting other models", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [deepseek, compatible] }) }));
+  render(<ModelPage role="admin" />);
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole("button", { name: /其他兼容模型/ }));
+
+  expect(await screen.findByRole("heading", { name: "其他兼容模型" })).toBeInTheDocument();
+  expect(screen.getByLabelText("模型 ID")).toHaveValue("custom-model");
+  expect(screen.getByLabelText("Base URL")).toHaveValue("");
+  expect(screen.getByLabelText("Base URL")).not.toHaveAttribute("readonly");
 });
 
 it("keeps a failed connection result visible without saving a Key", async () => {

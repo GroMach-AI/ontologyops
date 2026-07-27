@@ -12,6 +12,7 @@ type Provider = {
 };
 
 const providerLabels = { DeepSeek: "DeepSeek 官方接口", GPT: "OpenAI 官方接口", Compatible: "OpenAI 兼容 API" } as const;
+const deepSeekMark = "/assets/deepseek-mark.svg";
 
 export function ModelPage({ role }: { role: DemoRole }) {
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -19,9 +20,10 @@ export function ModelPage({ role }: { role: DemoRole }) {
   const [notice, setNotice] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [modelName, setModelName] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const admin = role === "admin";
   const headers = { "Content-Type": "application/json", "X-Demo-Role": role };
-  const selected = useMemo(() => providers.find((item) => item.provider === selectedName) ?? providers.find((item) => item.provider === "DeepSeek"), [providers, selectedName]);
+  const selected = useMemo(() => providers.find((item) => item.provider === selectedName), [providers, selectedName]);
 
   async function load() {
     const response = await fetch("/api/models", { headers: { "X-Demo-Role": role } });
@@ -32,14 +34,15 @@ export function ModelPage({ role }: { role: DemoRole }) {
   useEffect(() => {
     if (!selected) return;
     setModelName(selected.model_name);
+    setBaseUrl(selected.base_url ?? "");
     setApiKey(selected.verification_status === "verified" ? "••••••••••••" : "");
-  }, [selected?.id, selected?.model_name, selected?.verification_status]);
+  }, [selected?.id, selected?.model_name, selected?.base_url, selected?.verification_status]);
 
   async function verify() {
     if (!selected) return;
     setNotice("正在验证连接…");
     const keyToVerify = apiKey.includes("•") ? null : apiKey || null;
-    const response = await fetch(`/api/models/${selected.id}/verify`, { method: "POST", headers, body: JSON.stringify({ api_key: keyToVerify, model_name: modelName || selected.model_name }) });
+    const response = await fetch(`/api/models/${selected.id}/verify`, { method: "POST", headers, body: JSON.stringify({ api_key: keyToVerify, model_name: modelName || selected.model_name, base_url: baseUrl }) });
     const payload = await response.json();
     if (response.ok && payload.verification_status === "verified") {
       if (keyToVerify) {
@@ -61,27 +64,32 @@ export function ModelPage({ role }: { role: DemoRole }) {
 
   if (!admin) return <div className="panel"><h3>模型配置仅对管理员开放</h3><p className="muted">当前角色无法读取或调整本机模型配置。</p></div>;
   const options = selected?.available_models ?? [];
+  const compatible = selected?.provider === "Compatible";
   return <div className="model-page">
     {notice ? <p className="inline-notice" role="status">{notice}</p> : null}
     <div className="model-console">
       <aside className="provider-rail" aria-label="API Provider">
         <strong>API Provider</strong>
-        <ProviderButton name="DeepSeek" label={providerLabels.DeepSeek} selected={selectedName === "DeepSeek"} provider={providers.find((item) => item.provider === "DeepSeek")} icon={<img src="https://cdn.simpleicons.org/deepseek/4D6BFE" alt="" />} onClick={() => setSelectedName("DeepSeek")} />
-        <ProviderButton name="GPT" label={providerLabels.GPT} selected={selectedName === "GPT"} provider={providers.find((item) => item.provider === "GPT")} icon={<i className="ph ph-open-ai-logo" aria-hidden="true" />} onClick={() => setSelectedName("GPT")} />
+        <ProviderButton name="DeepSeek" label={providerLabels.DeepSeek} selected={selectedName === "DeepSeek"} provider={providers.find((item) => item.provider === "DeepSeek")} icon={<img src={deepSeekMark} alt="DeepSeek" />} onClick={() => setSelectedName("DeepSeek")} />
+        <ProviderButton name="GPT" label={providerLabels.GPT} selected={selectedName === "GPT"} provider={providers.find((item) => item.provider === "GPT")} icon={<i className="ph ph-open-ai-logo oo-chatgpt-mark" aria-hidden="true" />} onClick={() => setSelectedName("GPT")} />
         <ProviderButton name="Compatible" label={providerLabels.Compatible} selected={selectedName === "Compatible"} provider={providers.find((item) => item.provider === "Compatible")} icon={<Plug size={17} />} onClick={() => setSelectedName("Compatible")} />
       </aside>
       <section className="model-form">
         {selected ? <>
-          <div className="model-form-title"><span className="model-icon">{selected.provider === "DeepSeek" ? <img src="https://cdn.simpleicons.org/deepseek/4D6BFE" alt="" /> : selected.provider === "GPT" ? <i className="ph ph-open-ai-logo" aria-hidden="true" /> : <Plug size={18} />}</span><h3>{selected.provider}</h3></div>
-          <label className="form-field"><span>模型</span><select aria-label="选择模型" value={modelName || selected.model_name} onChange={(event) => setModelName(event.target.value)}>{options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          <div className="model-form-title"><span className="model-icon">{selected.provider === "DeepSeek" ? <img src={deepSeekMark} alt="DeepSeek" /> : selected.provider === "GPT" ? <i className="ph ph-open-ai-logo oo-chatgpt-mark" aria-hidden="true" /> : <Plug size={18} />}</span><h3>{compatible ? "其他兼容模型" : selected.provider === "GPT" ? "ChatGPT" : selected.provider}</h3></div>
+          {compatible ? (
+            <label className="form-field"><span>模型 ID</span><input aria-label="模型 ID" value={modelName} placeholder="例如：qwen-plus、glm-4.7" onChange={(event) => setModelName(event.target.value)} /></label>
+          ) : (
+            <label className="form-field"><span>模型</span><select aria-label="选择模型" value={modelName || selected.model_name} onChange={(event) => setModelName(event.target.value)}>{options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          )}
           <label className="form-field"><span>API Key</span><div className="key-input-row"><input aria-label="API Key" type="password" value={apiKey} placeholder="请输入 API Key" onFocus={() => { if (apiKey.includes("•")) setApiKey(""); }} onChange={(event) => setApiKey(event.target.value)} /><button className="secondary-button" onClick={() => void verify()}>测试连接</button>{selected.verification_status === "verified" ? <span className="test-result passed">测试通过</span> : selected.verification_status === "failed" ? <span className="test-result failed">测试失败</span> : null}</div></label>
-          <label className="form-field"><span>Base URL</span><input readOnly value={selected.base_url ?? "未配置"} /></label>
-        </> : <p className="muted">此 Provider 尚未配置。MVP 当前只允许 DeepSeek、GPT 与明确测试用 Mock。</p>}
+          <label className="form-field"><span>Base URL</span><input aria-label="Base URL" readOnly={!compatible} value={baseUrl} placeholder={compatible ? "例如：https://api.example.com/v1" : undefined} onChange={(event) => setBaseUrl(event.target.value)} /></label>
+        </> : <p className="muted">此 Provider 尚未配置。请先选择 DeepSeek、ChatGPT 或其他 OpenAI 兼容模型。</p>}
       </section>
     </div>
   </div>;
 }
 
 function ProviderButton({ name, label, selected, provider, icon, onClick }: { name: "DeepSeek" | "GPT" | "Compatible"; label: string; selected: boolean; provider?: Provider; icon: React.ReactNode; onClick: () => void }) {
-  return <button className={`provider-choice ${selected ? "selected" : ""}`} onClick={onClick}><span className="provider-icon">{icon}</span><span><b>{name === "Compatible" ? "其他兼容模型" : name}</b><small>{label}</small></span>{provider?.verification_status === "verified" ? <em>已连接</em> : null}</button>;
+  return <button className={`provider-choice ${selected ? "selected" : ""}`} onClick={onClick}><span className="provider-icon">{icon}</span><span><b>{name === "Compatible" ? "其他兼容模型" : name === "GPT" ? "ChatGPT" : name}</b><small>{label}</small></span>{provider?.verification_status === "verified" ? <em>已连接</em> : null}</button>;
 }
