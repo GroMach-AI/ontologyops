@@ -15,6 +15,7 @@ it("shows every MVP navigation destination when status API is unavailable", asyn
   );
 
   expect(await screen.findByRole("heading", { name: "本体管理" })).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "切换当前角色" })).toHaveValue("admin");
   expect(screen.queryByRole("link", { name: "首页" })).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "数据管道" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "本体管理" })).toBeInTheDocument();

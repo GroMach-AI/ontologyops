@@ -10,7 +10,7 @@ import { OntologyPage, type Ontology } from "../features/ontology/OntologyPage";
 import { PipelinePage } from "../features/pipeline/PipelinePage";
 
 export default function App() {
-  const [role, setRole] = useState<DemoRole>("modeler");
+  const [role, setRole] = useState<DemoRole>("admin");
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
 
   // Load persisted ontologies from backend on mount (survives page refresh)
