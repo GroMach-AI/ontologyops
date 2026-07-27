@@ -122,3 +122,20 @@ class ModelProviderConfig(Base):
     verification_status: Mapped[str] = mapped_column(String(16), default="unconfigured", nullable=False)
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class UserOntology(Base):
+    """User-created ontologies persisted across page refreshes."""
+    __tablename__ = "user_ontologies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    version: Mapped[str] = mapped_column(String(16), default="0.1", nullable=False)
+    objects: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    links: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    rules: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    entities_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    relationships_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

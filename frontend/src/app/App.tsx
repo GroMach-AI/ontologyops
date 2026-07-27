@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell, type DemoRole } from "../components/AppShell";
@@ -13,6 +13,19 @@ import { PipelinePage } from "../features/pipeline/PipelinePage";
 export default function App() {
   const [role, setRole] = useState<DemoRole>("modeler");
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
+
+  // Load ontologies from backend on mount (survives page refresh)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/ontology-drafts/list");
+        if (res.ok) {
+          const data = await res.json();
+          setOntologies(data.ontologies ?? []);
+        }
+      } catch { /* backend may not be ready */ }
+    })();
+  }, []);
 
   return (
     <AppShell role={role} onRoleChange={setRole} ontologies={ontologies}>

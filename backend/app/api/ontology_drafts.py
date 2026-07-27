@@ -1,4 +1,4 @@
-"""Ontology Drafts - Upload files + profiling and interactive QA."""
+"""Ontology Drafts - Upload files + profiling + interactive QA + persistence."""
 from __future__ import annotations
 
 import json
@@ -7,10 +7,13 @@ from io import StringIO
 from uuid import uuid4
 
 import pandas as pd
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.database import runtime_metadata_engine
+from app.models.platform import UserOntology
 from app.services.model_provider import ModelProviderService
 
 router = APIRouter(prefix="/api/ontology-drafts", tags=["ontology-drafts"])
@@ -396,3 +399,93 @@ def refine_with_answers(request: RefineRequest):
         }
     except Exception as e:
         return {"mode": "mock", "analysis": str(e), "provider": "Mock Provider", "model": "ontologyops-mock"}
+
+
+class SaveOntologyRequest(BaseModel):
+    id: str
+    name: str
+    scope: str
+    status: str = "draft"
+    version: str = "0.1"
+    objects: int = 0
+    links: int = 0
+    rules: int = 0
+    entities: list[dict] = []
+    relationships: list[dict] = []
+
+
+@router.post("/list")
+def save_user_ontology(request: SaveOntologyRequest) -> dict[str, object]:
+    """Persist a user-created ontology to SQLite."""
+    engine = runtime_metadata_engine()
+    with Session(engine) as session:
+        existing = session.get(UserOntology, request.id)
+        if existing:
+            existing.name = request.name
+            existing.scope = request.scope
+            existing.status = request.status
+            existing.version = request.version
+            existing.objects = request.objects
+            existing.links = request.links
+            existing.rules = request.rules
+            existing.entities_json = json.dumps(request.entities, ensure_ascii=False)
+            existing.relationships_json = json.dumps(request.relationships, ensure_ascii=False)
+        else:
+            onto = UserOntology(
+                id=request.id,
+                name=request.name,
+                scope=request.scope,
+                status=request.status,
+                version=request.version,
+                objects=request.objects,
+                links=request.links,
+                rules=request.rules,
+                entities_json=json.dumps(request.entities, ensure_ascii=False),
+                relationships_json=json.dumps(request.relationships, ensure_ascii=False),
+            )
+            session.add(onto)
+        session.commit()
+    return {"status": "saved", "id": request.id}
+
+
+@router.get("/list")
+def list_user_ontologies() -> dict[str, object]:
+    """Load all user-created ontologies from SQLite."""
+    engine = runtime_metadata_engine()
+    with Session(engine) as session:
+        items = session.scalars(
+            select(UserOntology).order_by(UserOntology.created_at.desc())
+        ).all()
+        ontologies = []
+        for item in items:
+            ontologies.append({
+                "id": item.id,
+                "name": item.name,
+                "scope": item.scope,
+                "status": item.status,
+                "version": item.version,
+                "objects": item.objects,
+                "links": item.links,
+                "rules": item.rules,
+                "updated": item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "刚刚",
+                "entities": json.loads(item.entities_json),
+                "relationships": json.loads(item.relationships_json),
+            })
+        return {"ontologies": ontologies}
+
+
+class DeleteOntologyRequest(BaseModel):
+    id: str
+
+
+@router.post("/list/delete")
+def delete_user_ontology(request: DeleteOntologyRequest) -> dict[str, str]:
+    """Delete a user-created ontology by id."""
+    engine = runtime_metadata_engine()
+    with Session(engine) as session:
+        item = session.get(UserOntology, request.id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Ontology not found")
+        session.delete(item)
+        session.commit()
+    return {"status": "deleted", "id": request.id}

@@ -305,7 +305,7 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
     if (qIndex > 0) setQIndex(qIndex - 1);
   }
 
-  function onCreateSubmit() {
+  async function onCreateSubmit() {
     const name = formName.trim();
     const scope = formScope.trim();
     if (!name || !scope) return;
@@ -321,6 +321,13 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
       entities,
       relationships,
     };
+    try {
+      await fetch("/api/ontology-drafts/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(onto),
+      });
+    } catch { /* ignore save error */ }
     onCreated?.(onto);
     closeCreate();
     navigate(`/ontology/${id}`);
