@@ -85,6 +85,10 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(initialPositions);
   const [selectedName, setSelectedName] = useState<string>(initialSelected ?? entities[0]?.name ?? "");
   const [sideTab, setSideTab] = useState<"struct" | "rows" | "rels">("struct");
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 2.0;
+  const ZOOM_STEP = 0.2;
 
   // Reset state when the entity list changes (loading a different ontology)
   useEffect(() => {
@@ -162,6 +166,22 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
     setPositions(autoLayout(entities));
   }
 
+  function zoomIn() {
+    setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
+  }
+  function zoomOut() {
+    setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)));
+  }
+  function zoomReset() {
+    setZoom(1);
+  }
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    if (event.deltaY < 0) zoomIn();
+    else zoomOut();
+  }
+
   if (entities.length === 0) {
     return (
       <div className="oo-graph-view">
@@ -212,14 +232,22 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
 
       {/* CENTER: 图谱画布 */}
       <div className="oo-graph-canvas-wrap">
-        <div className="oo-graph-canvas" ref={canvasRef} role="region" aria-label="本体图谱画布">
+        <div
+          className={zoom !== 1 ? "oo-graph-canvas is-zoomed" : "oo-graph-canvas"}
+          ref={canvasRef}
+          role="region"
+          aria-label="本体图谱画布"
+          style={{ transform: `scale(${zoom})` }}
+          onWheel={handleWheel}
+        >
           <div className="oo-graph-canvas-bg" />
           <div className="oo-graph-canvas-grid" />
           {/* 连线（SVG 层） */}
           <svg
             className="oo-graph-svg"
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
             viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
-            preserveAspectRatio="none"
             xmlns="http://www.w3.org/2000/svg"
             aria-hidden="true"
           >
@@ -295,12 +323,23 @@ export function OntologyGraphView({ entities, relationships, initialSelected }: 
           })}
 
           <div className="oo-graph-toolbar" role="toolbar" aria-label="图谱工具栏">
+            <button type="button" title="放大" onClick={zoomIn}>
+              <i className="ph ph-plus" aria-hidden="true" />
+            </button>
+            <button type="button" title="缩小" onClick={zoomOut}>
+              <i className="ph ph-minus" aria-hidden="true" />
+            </button>
+            <button type="button" title="重置缩放" onClick={zoomReset}>
+              <i className="ph ph-frame-corners" aria-hidden="true" />
+            </button>
+            <span className="oo-graph-tool-sep" aria-hidden="true" />
             <button type="button" title="重置布局" onClick={resetLayout}>
               <i className="ph ph-arrows-clockwise" aria-hidden="true" />
             </button>
             <button type="button" title="自动布局" onClick={autoArrange}>
               <i className="ph ph-flow-arrow" aria-hidden="true" />
             </button>
+            <span className="oo-graph-zoom-readout">{Math.round(zoom * 100)}%</span>
           </div>
 
           <div className="oo-graph-tip">
