@@ -13,7 +13,6 @@ type AppShellProps = {
   role: DemoRole;
   onRoleChange: (role: DemoRole) => void;
   ontologies: OntologySummary[];
-  onCreated?: () => void;
 };
 
 const navigation = [
@@ -30,7 +29,7 @@ const roleLabels: Record<DemoRole, string> = {
   operator: "业务运营者",
 };
 
-export function AppShell({ children, role, onRoleChange, ontologies, onCreated }: AppShellProps) {
+export function AppShell({ children, role, onRoleChange, ontologies }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const section = navigation.find((item) => item.to === location.pathname || location.pathname.startsWith(item.to + "/"))?.label ?? "本体管理";
@@ -43,13 +42,7 @@ export function AppShell({ children, role, onRoleChange, ontologies, onCreated }
     ?? null;
   const switcherLabel = currentOntology
     ? `${currentOntology.name} · ${currentOntology.version}${currentOntology.status === "published" ? " 已发布" : " 草稿"}`
-    : "创建或选择本体";
-  const isOnOntologyPage = location.pathname === "/ontology";
-  const goCreate = () => {
-    setMenuOpen(false);
-    if (!isOnOntologyPage) navigate("/ontology");
-    onCreated?.();
-  };
+    : "暂无本体";
 
   return (
     <div className="oo-app">
@@ -66,7 +59,7 @@ export function AppShell({ children, role, onRoleChange, ontologies, onCreated }
             style={!currentOntology ? { color: "oklch(0.58 0.04 155)" } : undefined}
           >
             <span>{switcherLabel}</span>
-            <i className={"ph " + (currentOntology ? "ph-caret-down" : "ph-plus")} aria-hidden="true" />
+            <i className="ph ph-caret-down" aria-hidden="true" />
           </button>
           {menuOpen ? (
             <div className="oo-ontology-menu" role="menu">
@@ -84,10 +77,6 @@ export function AppShell({ children, role, onRoleChange, ontologies, onCreated }
                   在本体管理页面点击"创建本体"开始第一个本体的建模。
                 </div>
               )}
-              <button className="oo-ontology-menu-item oo-ontology-menu-create" type="button" onClick={goCreate}>
-                <i className="ph ph-plus" aria-hidden="true" />
-                <span>创建本体</span>
-              </button>
             </div>
           ) : null}
         </div>

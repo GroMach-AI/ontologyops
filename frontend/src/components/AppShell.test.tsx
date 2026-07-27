@@ -16,6 +16,7 @@ it("keeps the role selector without duplicating the selected role or MVP label",
   );
 
   expect(screen.getByRole("combobox", { name: "切换当前角色" })).toHaveValue("admin");
+  expect(screen.getByRole("button", { name: "暂无本体" })).toBeInTheDocument();
   expect(screen.getByText("当前角色")).toBeInTheDocument();
   expect(screen.queryByText("管理员", { selector: "strong" })).not.toBeInTheDocument();
   expect(screen.queryByText("单租户 MVP")).not.toBeInTheDocument();
