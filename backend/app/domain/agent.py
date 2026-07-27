@@ -28,7 +28,8 @@ ENTITY_ALIASES: dict[str, tuple[str, ...]] = {
     "BomLine": ("bom", "物料清单", "清单"),
     "ProductionPlan": ("生产计划", "生产工单", "工单"),
 }
-COUNT_TERMS = ("多少", "数量", "几", "总数", "数量", "统计")
+COUNT_TERMS = ("多少", "数量", "总数", "统计", "几家", "几条", "几笔")
+LIST_TERMS = ("哪些", "分别", "明细", "列表", "哪几")
 
 
 class AgentService:
@@ -43,17 +44,19 @@ class AgentService:
         self.metadata_engine = metadata_engine
         self.role = role
 
-    def chat(self, message: str) -> dict[str, Any]:
+    def chat(self, message: str, *, context_entity_id: str | None = None) -> dict[str, Any]:
         ontology = self._published_ontology()
         entities = self._entities(ontology)
         entity = self._resolve_entity(message, entities)
+        if entity is None and _is_follow_up_question(message):
+            entity = self._entity_from_context(context_entity_id, entities)
         if entity is None:
-            return self._unknown_entity_answer(ontology, entities, message)
+            return self._general_knowledge_answer(ontology, message)
 
         entity_id = str(entity["name"])
         entity_label = str(entity.get("label") or entity_id)
         records = self._instances(ontology.id, entity_id)
-        operation = "count" if any(term in message for term in COUNT_TERMS) else "list"
+        operation = "count" if _is_count_request(message) else "list"
         if not records:
             return self._no_data_answer(ontology, entity_id, entity_label, message, operation)
 
@@ -66,6 +69,12 @@ class AgentService:
         )
         self._write_audit(message, payload["tool_calls"], ontology.id)
         return payload
+
+    @staticmethod
+    def _entity_from_context(entity_id: str | None, entities: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if not entity_id:
+            return None
+        return next((entity for entity in entities if entity.get("name") == entity_id), None)
 
     def _published_ontology(self) -> UserOntology:
         with Session(self.metadata_engine) as session:
@@ -134,6 +143,7 @@ class AgentService:
             fallback=fallback,
         )
         return {
+            "route": "ontology",
             "answer": completion.content,
             "objects": self._objects(records, properties, entity_id, entity_label),
             "evidence": evidence,
@@ -157,6 +167,7 @@ class AgentService:
     ) -> dict[str, Any]:
         tool_calls = [{"name": "query_entity_instances", "entity_id": entity_id, "operation": operation, "status": "success"}]
         payload = {
+            "route": "ontology",
             "answer": f"当前已发布本体中的「{entity_label}」尚无已映射数据，无法基于该实体给出结论。请先在数据与管道中完成可信数据集映射与实体填充。",
             "objects": [],
             "evidence": [{"kind": "entity_no_data", "entity_id": entity_id, "entity_label": entity_label}],
@@ -172,22 +183,41 @@ class AgentService:
         self._write_audit(message, tool_calls, ontology.id)
         return payload
 
-    def _unknown_entity_answer(self, ontology: UserOntology, entities: list[dict[str, Any]], message: str) -> dict[str, Any]:
-        labels = "、".join(str(entity.get("label") or entity["name"]) for entity in entities)
+    def _general_knowledge_answer(self, ontology: UserOntology, message: str) -> dict[str, Any]:
+        model_service = ModelProviderService(self.metadata_engine)
+        profile = model_service.agent_profile()
+        if _is_model_identity_question(message):
+            completion = ModelCompletion(
+                _model_identity_message(profile),
+                profile["provider"],
+                profile["model_name"],
+                profile["mode"],
+            )
+        else:
+            try:
+                completion = model_service.complete_general_answer(message)
+            except ModelProviderUnavailable:
+                completion = ModelCompletion(
+                    "当前没有可用的已验证大模型，因此暂时无法回答通用知识问题。请先在模型管理中验证并启用 DeepSeek、GPT 或兼容模型。",
+                    profile["provider"],
+                    profile["model_name"],
+                    "deterministic",
+                )
         payload = {
-            "answer": f"未能将问题对应到当前已发布本体的实体类型。当前可查询实体为：{labels or '无'}。请使用其中的业务名称重新提问。",
+            "route": "knowledge",
+            "answer": completion.content,
             "objects": [],
             "evidence": [],
             "provenance": {
-                "sources": [],
+                "sources": ["大模型通用知识"],
                 "updated_at": datetime.now(UTC).isoformat(),
-                "metric_definition": "未执行实体数据查询",
+                "metric_definition": "通用知识回答不读取企业本体数据，也不提供企业数据证据。",
                 "ontology_version": self._version_label(ontology),
             },
-            "tool_calls": [{"name": "resolve_published_entity", "status": "no_match"}],
-            "model": {"provider": "受控查询引擎", "model_name": "ontology-entity-router", "mode": "deterministic"},
+            "tool_calls": [],
+            "model": self._model_payload(completion),
         }
-        self._write_audit(message, payload["tool_calls"], ontology.id)
+        self._write_audit(message, [], ontology.id)
         return payload
 
     def _summarize(
@@ -297,3 +327,23 @@ def _object_label(properties: dict[str, Any], entity_label: str, fallback: str) 
         if value not in (None, ""):
             return str(value)
     return f"{entity_label} {fallback}"
+
+
+def _is_model_identity_question(message: str) -> bool:
+    normalized = message.replace(" ", "")
+    return any(token in normalized for token in ("哪个模型", "什么模型", "你是谁", "模型身份"))
+
+
+def _is_count_request(message: str) -> bool:
+    return not any(term in message for term in LIST_TERMS) and any(term in message for term in COUNT_TERMS)
+
+
+def _is_follow_up_question(message: str) -> bool:
+    normalized = message.replace(" ", "")
+    return any(term in normalized for term in ("分别", "哪些", "明细", "列表", "哪几", "它们", "这些", "这几"))
+
+
+def _model_identity_message(profile: dict[str, str]) -> str:
+    if profile["mode"] == "real":
+        return f"当前智能助手配置使用 {profile['provider']} 的 {profile['model_name']}。企业数据问题会先经过本体受控查询，再由该模型组织回答；通用问题不读取企业本体数据。"
+    return "当前智能助手未启用已验证的真实大模型。本体数据问题仍可返回受控查询结果；通用知识回答需要先在模型管理中验证并启用模型。"

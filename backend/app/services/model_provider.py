@@ -72,6 +72,51 @@ class ModelProviderService:
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
             raise ModelProviderUnavailable("真实模型调用失败，请检查连接与服务状态后重试。") from error
 
+    def agent_profile(self) -> dict[str, str]:
+        provider = self._default_agent_provider()
+        if provider is None or provider.provider == "Mock Provider":
+            return {"provider": "Mock Provider", "model_name": "ontologyops-mock", "mode": "mock"}
+        if provider.verification_status == "verified" and os.getenv(provider.api_key_env or "") and provider.base_url:
+            return {"provider": provider.provider, "model_name": provider.model_name, "mode": "real"}
+        return {"provider": provider.provider, "model_name": provider.model_name, "mode": "deterministic"}
+
+    def complete_general_answer(self, message: str) -> ModelCompletion:
+        provider = self._default_agent_provider()
+        if provider is None or provider.provider == "Mock Provider":
+            raise ModelProviderUnavailable("当前未启用真实模型。")
+        api_key = os.getenv(provider.api_key_env or "")
+        if provider.verification_status != "verified" or not api_key or not provider.base_url:
+            raise ModelProviderUnavailable("当前真实模型尚未通过连接验证或缺少本机凭据。")
+        payload = {
+            "model": provider.model_name,
+            "temperature": float(provider.temperature),
+            "max_tokens": provider.max_tokens,
+            "messages": [
+                {"role": "system", "content": "你是 OntologyOps 的通用智能助手。当前问题不属于企业本体数据查询，不能访问、推测或泄露企业数据。请用简洁中文回答。涉及实时新闻、实时统计、价格、天气、政策或需要最新事实的问题，要明确说明你无法联网核验，不能伪造来源。"},
+                {"role": "user", "content": message},
+            ],
+        }
+        try:
+            response = httpx.post(
+                f"{provider.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+                timeout=20,
+            )
+            response.raise_for_status()
+            data = response.json()
+            usage = data.get("usage", {})
+            return ModelCompletion(
+                content=str(data["choices"][0]["message"]["content"]),
+                provider=provider.provider,
+                model_name=provider.model_name,
+                mode="real",
+                input_tokens=usage.get("prompt_tokens"),
+                output_tokens=usage.get("completion_tokens"),
+            )
+        except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
+            raise ModelProviderUnavailable("真实模型调用失败，请检查连接与服务状态后重试。") from error
+
     def verify(self, provider: ModelProviderConfig, api_key_override: str | None = None) -> tuple[bool, str | None]:
         """Verify credential reachability without sending a prompt or business data."""
         api_key = api_key_override or os.getenv(provider.api_key_env or "")
