@@ -1,13 +1,19 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 
 export type DemoRole = "admin" | "modeler" | "operator";
+
+export type OntologySummary = {
+  id: string; name: string; version: string; status: "draft" | "published";
+};
 
 type AppShellProps = {
   children: ReactNode;
   role: DemoRole;
   onRoleChange: (role: DemoRole) => void;
+  ontologies: OntologySummary[];
+  onCreated?: () => void;
 };
 
 const navigation = [
@@ -25,10 +31,26 @@ const roleLabels: Record<DemoRole, string> = {
   operator: "业务运营者",
 };
 
-export function AppShell({ children, role, onRoleChange }: AppShellProps) {
+export function AppShell({ children, role, onRoleChange, ontologies, onCreated }: AppShellProps) {
   const location = useLocation();
-  const section = navigation.find((item) => item.to === location.pathname)?.label ?? "首页";
+  const navigate = useNavigate();
+  const section = navigation.find((item) => item.to === location.pathname || (item.to !== "/" && location.pathname.startsWith(item.to + "/")))?.label ?? "首页";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeOntologyId, setActiveOntologyId] = useState<string | null>(null);
+  const routeOntologyId = location.pathname.startsWith("/ontology/") ? location.pathname.split("/")[2] : null;
+  const currentOntology = ontologies.find((o) => o.id === routeOntologyId)
+    ?? ontologies.find((o) => o.id === activeOntologyId)
+    ?? ontologies[0]
+    ?? null;
+  const switcherLabel = currentOntology
+    ? `${currentOntology.name} · ${currentOntology.version}${currentOntology.status === "published" ? " 已发布" : " 草稿"}`
+    : "创建或选择本体";
+  const isOnOntologyPage = location.pathname === "/ontology";
+  const goCreate = () => {
+    setMenuOpen(false);
+    if (!isOnOntologyPage) navigate("/ontology");
+    onCreated?.();
+  };
 
   return (
     <div className="oo-app">
@@ -39,30 +61,31 @@ export function AppShell({ children, role, onRoleChange }: AppShellProps) {
         </div>
         <div className="oo-switcher">
           <button
-            className="oo-workspace-switcher"
-            type="button"
+            className="oo-workspace-switcher" type="button"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((value) => !value)}
+            style={!currentOntology ? { color: "oklch(0.58 0.04 155)" } : undefined}
           >
-            <span>制造业本体 · v1.0</span>
-            <i className="ph ph-caret-down" aria-hidden="true" />
+            <span>{switcherLabel}</span>
+            <i className={"ph " + (currentOntology ? "ph-caret-down" : "ph-plus")} aria-hidden="true" />
           </button>
           {menuOpen ? (
             <div className="oo-ontology-menu" role="menu">
-              <div className="oo-ontology-menu-head">切换本体</div>
-              <button className="oo-ontology-menu-item" type="button" onClick={() => setMenuOpen(false)}>
-                <i className="ph ph-check" aria-hidden="true" />
-                <span>制造业本体<small>当前 · v1.0 已发布</small></span>
-              </button>
-              <button className="oo-ontology-menu-item" type="button" onClick={() => setMenuOpen(false)}>
-                <i className="ph ph-circles-three-plus" aria-hidden="true" />
-                <span>服务运营本体<small>v0.3 草稿</small></span>
-              </button>
-              <button
-                className="oo-ontology-menu-item oo-ontology-menu-create"
-                type="button"
-                onClick={() => setMenuOpen(false)}
-              >
+              <div className="oo-ontology-menu-head">{ontologies.length > 0 ? "切换本体" : "还没有本体"}</div>
+              {ontologies.length > 0 ? (
+                ontologies.map((o) => (
+                  <button key={o.id} className="oo-ontology-menu-item" type="button"
+                    onClick={() => { setActiveOntologyId(o.id); setMenuOpen(false); navigate(`/ontology/${o.id}`); }}>
+                    <i className={"ph " + (o.id === currentOntology?.id ? "ph-check" : "ph-circles-three-plus")} aria-hidden="true" />
+                    <span>{o.name}<small>{o.id === currentOntology?.id ? "当前" : ""} · {o.version}{o.status === "published" ? " 已发布" : " 草稿"}</small></span>
+                  </button>
+                ))
+              ) : (
+                <div style={{ padding: "8px 12px", fontSize: 12, color: "oklch(0.6 0.015 155)", lineHeight: 1.4 }}>
+                  在本体管理页面点击"创建本体"开始第一个本体的建模。
+                </div>
+              )}
+              <button className="oo-ontology-menu-item oo-ontology-menu-create" type="button" onClick={goCreate}>
                 <i className="ph ph-plus" aria-hidden="true" />
                 <span>创建本体</span>
               </button>

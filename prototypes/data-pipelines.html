@@ -1,7 +1,302 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>OntologyOps · 数据与管道</title><link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"><link rel="stylesheet" href="prototype-system.css"></head>
-<body><div class="app"><header class="topbar"><div class="brand"><i class="ph ph-hexagon brand-mark"></i><span>OntologyOps</span></div><a class="workspace-switcher" href="ontology-management-overview.html">采购与供应链 <i class="ph ph-caret-down"></i></a><div class="top-status"><span class="status-dot"></span>资源注册正常</div><div class="top-version">数据资源 · 5 个数据集</div><div class="top-tools"><button class="top-icon" data-toast-message="暂无新的治理通知。"><i class="ph ph-bell"></i></button><button class="top-icon" data-toast-message="数据接入将在导入向导中完成。"><i class="ph ph-question"></i></button><button class="top-icon"><i class="ph ph-user-circle"></i></button></div></header>
-<div class="shell"><aside class="sidebar"><nav class="nav"><a class="nav-item" href="home-workspace.html"><i class="ph ph-house"></i><span>首页</span></a><a class="nav-item is-active" href="data-pipelines.html" aria-current="page"><i class="ph ph-database"></i><span>数据与管道</span></a><a class="nav-item" href="ontology-management-overview.html"><i class="ph ph-share-network"></i><span>本体管理</span></a><a class="nav-item" href="assistant.html"><i class="ph ph-chats-circle"></i><span>智能助手</span></a><a class="nav-item" href="governance-lineage.html"><i class="ph ph-shield-check"></i><span>治理与可追溯</span></a><a class="nav-item" href="model-management.html"><i class="ph ph-cube"></i><span>模型管理</span></a></nav><div class="sidebar-foot">当前角色<strong>数据建模员 · 可编辑</strong></div></aside>
-<main><div class="page-heading"><div><div class="eyebrow">DATA FOUNDATION</div><h1>数据与管道</h1><div class="heading-meta"><span>数据源 → 数据集版本 → 受控管道 → 质量结果</span></div></div><div class="heading-actions"><button class="secondary-button" data-toast-message="原型模式：将打开数据源连接配置。"><i class="ph ph-plugs-connected"></i>连接数据源</button><button class="primary-button" data-toast-message="原型模式：将打开文件导入向导，并注册新的 DatasetVersion。"><i class="ph ph-upload-simple"></i>导入数据</button></div></div>
-<section class="card"><div class="card-head"><div><h2>数据集目录</h2><p>只有通过质量门禁的数据集版本才可作为本体映射输入。</p></div><span class="small faint">示例工作区 · 5 个注册资源</span></div><div class="filter-bar"><i class="ph ph-magnifying-glass faint"></i><input class="filter-input" placeholder="搜索数据集或资源 ID"><button class="filter-chip is-selected" data-filter>全部</button><button class="filter-chip" data-filter>可信</button><button class="filter-chip" data-filter>待处理</button><button class="filter-chip" data-filter>已拒绝</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>数据集版本</th><th>来源</th><th>更新时间</th><th>质量结果</th><th>下游引用</th><th>状态</th></tr></thead><tbody><tr data-selectable data-select-row class="is-selected"><td><strong>Supplier_2026_07</strong><span class="table-sub mono">dsv_047 · CSV 导入</span></td><td>供应商主数据 / 新上传文件</td><td>今天 10:32</td><td>QR-012 发现 18 条异常</td><td>Supplier 映射 · v0.8.1 草稿</td><td><span class="status-badge warn">待确认</span></td></tr><tr data-selectable data-select-row><td><strong>ERP_PO_HEADER</strong><span class="table-sub mono">dsv_031 · PostgreSQL</span></td><td>ERP 只读连接</td><td>今天 09:45</td><td>6 / 6 规则通过</td><td>PurchaseOrder 映射 · 已发布</td><td><span class="status-badge ok">可信</span></td></tr><tr data-selectable data-select-row><td><strong>WMS_INVENTORY</strong><span class="table-sub mono">dsv_018 · API 快照</span></td><td>仓储系统 API</td><td>昨天 21:00</td><td>5 / 5 规则通过</td><td>Inventory 映射 · 已发布</td><td><span class="status-badge ok">可信</span></td></tr><tr data-selectable data-select-row><td><strong>Material_Catalog</strong><span class="table-sub mono">dsv_026 · XLSX 导入</span></td><td>物料目录 / 人工导入</td><td>昨天 16:18</td><td>编码唯一性通过</td><td>Material 映射 · 已发布</td><td><span class="status-badge ok">可信</span></td></tr></tbody></table></div></section>
-<section class="page-grid wide-left section-gap"><article class="card"><div class="card-head"><div><h2>Supplier_2026_07 的受控处理</h2><p>每一步产出可追溯资源；不是固定的“工厂模板”血缘。</p></div><span class="status-badge warn">质量待确认</span></div><div class="pipeline-steps"><div class="pipeline-step"><div class="step-number">01 · REGISTER</div><h3>文件已注册</h3><p>记录来源、导入人、摘要与原始文件指纹。</p><i class="ph ph-check-circle step-state"></i></div><div class="pipeline-step"><div class="step-number">02 · PROFILE</div><h3>字段已剖析</h3><p>识别 12 列、类型候选、空值和唯一性统计。</p><i class="ph ph-check-circle step-state"></i></div><div class="pipeline-step"><div class="step-number">03 · VALIDATE</div><h3>质量规则运行</h3><p>执行 QR-012、QR-018；异常样本已留存。</p><i class="ph ph-warning-circle step-state" style="color:var(--warning)"></i></div><div class="pipeline-step"><div class="step-number">04 · TRUST</div><h3>等待可信确认</h3><p>确认后生成可映射的 trusted DatasetVersion。</p><i class="ph ph-lock-key step-state" style="color:var(--ink-faint)"></i></div></div><div style="padding:18px"><div class="notice warning"><i class="ph ph-warning"></i><span><strong>门禁说明：</strong>Supplier_2026_07 不能用于发布映射；必须先处理或豁免其质量异常，并留下审计理由。</span></div></div></article><aside class="card"><div class="card-head"><div><h2>运行证据</h2><p>run_20260722_1032</p></div><button class="quiet-button" data-toast-message="已复制运行资源 ID。">复制 ID</button></div><ul class="list"><li class="list-item"><span class="list-icon"><i class="ph ph-files"></i></span><div class="list-main"><div class="list-title">1,248 行 / 12 列</div><div class="list-meta">文件指纹已记录</div></div></li><li class="list-item"><span class="list-icon"><i class="ph ph-list-checks"></i></span><div class="list-main"><div class="list-title">2 条质量规则</div><div class="list-meta">1 pass · 1 warning</div></div></li><li class="list-item"><span class="list-icon"><i class="ph ph-bug"></i></span><div class="list-main"><div class="list-title">18 条异常样本</div><div class="list-meta">可回到原始行定位</div></div></li></ul><div style="padding:14px"><button class="secondary-button" style="width:100%" data-toast-message="原型模式：将打开质量规则与异常样本。"><i class="ph ph-arrow-square-out"></i>查看质量结果</button></div></aside></section></main></div></div><div class="toast" data-toast role="status"><i class="ph ph-check-circle"></i><span>已更新。</span></div><script src="prototype-system.js"></script></body></html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>OntologyOps · 数据管道</title><link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"><link rel="stylesheet" href="prototype-system.css"></head>
+<body>
+<div class="app">
+<header class="topbar">
+  <div class="brand"><i class="ph ph-hexagon brand-mark"></i><span>OntologyOps</span></div>
+  <a class="workspace-switcher" href="ontology-management-overview.html">采购与供应链 <i class="ph ph-caret-down"></i></a>
+  <div class="top-status"><span class="status-dot"></span>本地运行</div>
+  <div class="top-version">单租户 MVP</div>
+  <div class="top-tools">
+    <button class="top-icon" data-toast-message="暂无新的通知。"><i class="ph ph-bell"></i></button>
+    <button class="top-icon" data-toast-message="数据管道原型说明：4 步流水线由程序驱动，必要时由 LLM 推荐候选。"><i class="ph ph-question"></i></button>
+    <button class="top-icon"><i class="ph ph-user-circle"></i></button>
+  </div>
+</header>
+<div class="shell">
+<aside class="sidebar">
+  <nav class="nav">
+    <a class="nav-item" href="home-workspace.html"><i class="ph ph-house"></i><span>首页</span></a>
+    <a class="nav-item is-active" href="data-pipelines.html" aria-current="page"><i class="ph ph-database"></i><span>数据与管道</span></a>
+    <a class="nav-item" href="ontology-management-overview.html"><i class="ph ph-share-network"></i><span>本体管理</span></a>
+    <a class="nav-item" href="assistant.html"><i class="ph ph-chats-circle"></i><span>智能助手</span></a>
+    <a class="nav-item" href="governance-lineage.html"><i class="ph ph-shield-check"></i><span>治理与可追溯</span></a>
+    <a class="nav-item" href="model-management.html"><i class="ph ph-cube"></i><span>模型管理</span></a>
+  </nav>
+  <div class="sidebar-foot">当前角色<strong>本体建模者 · 可编辑</strong></div>
+</aside>
+<main>
+
+<div class="page-heading">
+  <div>
+    <div class="eyebrow">DATA FOUNDATION</div>
+    <h1>数据管道</h1>
+    <div class="heading-meta"><span>程序驱动 · LLM 仅在需要时提供候选 · 人类最终确认</span></div>
+  </div>
+  <div class="heading-actions">
+    <button class="secondary-button" data-toast-message="原型模式：后续将支持 MySQL / 数据仓库连接。"><i class="ph ph-plugs-connected"></i>新建管道</button>
+  </div>
+</div>
+
+<!-- 纵向步骤列表 + 右侧详情 -->
+<div class="card">
+<div class="split" style="min-height:520px;display:grid;">
+
+<!-- 左侧：纵向 4 步骤列表 -->
+<div style="border-right:1px solid var(--line);background:#fff;display:flex;flex-direction:column;">
+
+  <!-- STEP 1: 数据连接 -->
+  <button class="pipe-stage is-active" data-pipe-step="0" style="cursor:pointer;border:0;width:100%;text-align:left;display:flex;align-items:flex-start;gap:12px;padding:16px 14px;border-bottom:1px solid var(--line);border-left:3px solid var(--accent);background:var(--accent-soft);">
+    <div class="step-circle" style="width:30px;height:30px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;background:var(--accent);">1</div>
+    <div style="min-width:0;flex:1;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <strong style="font-size:13px;color:var(--ink);">数据连接</strong>
+        <span class="status-badge ok" style="font-size:10px;padding:3px 6px;">已连接</span>
+      </div>
+      <div style="margin-top:5px;color:var(--ink-soft);font-size:11px;line-height:1.4;">3 个文件已登记 · csv 导入</div>
+    </div>
+  </button>
+
+  <!-- STEP 2: 数据存储 -->
+  <button class="pipe-stage" data-pipe-step="1" style="cursor:pointer;border:0;border-left:3px solid transparent;width:100%;text-align:left;display:flex;align-items:flex-start;gap:12px;padding:16px 14px;border-bottom:1px solid var(--line);transition:background .1s;">
+    <div class="step-circle" style="width:30px;height:30px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--ink-faint);background:var(--surface-subtle);">2</div>
+    <div style="min-width:0;flex:1;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <strong style="font-size:13px;color:var(--ink-soft);">数据存储</strong>
+        <span class="status-badge draft" style="font-size:10px;padding:3px 6px;">待确认</span>
+      </div>
+      <div style="margin-top:5px;color:var(--ink-faint);font-size:11px;line-height:1.4;">程序推断 schema · 待人工确认并注册</div>
+    </div>
+  </button>
+
+  <!-- STEP 3: 数据预处理 (带 LLM 标签) -->
+  <button class="pipe-stage" data-pipe-step="2" style="cursor:pointer;border:0;border-left:3px solid transparent;width:100%;text-align:left;display:flex;align-items:flex-start;gap:12px;padding:16px 14px;border-bottom:1px solid var(--line);transition:background .1s;">
+    <div class="step-circle" style="width:30px;height:30px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--ink-faint);background:var(--surface-subtle);">3</div>
+    <div style="min-width:0;flex:1;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <strong style="font-size:13px;color:var(--ink-soft);">数据预处理</strong>
+        <span style="display:inline-flex;align-items:center;gap:3px;padding:3px 6px;border-radius:4px;font-size:10px;font-weight:700;color:oklch(0.43 0.13 285);background:oklch(0.95 0.05 285);"><i class="ph ph-sparkle" style="font-size:11px;"></i>AI 推荐</span>
+      </div>
+      <div style="margin-top:5px;color:var(--ink-faint);font-size:11px;line-height:1.4;">程序清洗 · LLM 推荐类型转换与重命名</div>
+    </div>
+  </button>
+
+  <!-- STEP 4: 本体映射 (带 LLM 标签) -->
+  <button class="pipe-stage" data-pipe-step="3" style="cursor:pointer;border:0;border-left:3px solid transparent;width:100%;text-align:left;display:flex;align-items:flex-start;gap:12px;padding:16px 14px;transition:background .1s;">
+    <div class="step-circle" style="width:30px;height:30px;flex:0 0 auto;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--ink-faint);background:var(--surface-subtle);">4</div>
+    <div style="min-width:0;flex:1;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <strong style="font-size:13px;color:var(--ink-soft);">本体映射</strong>
+        <span style="display:inline-flex;align-items:center;gap:3px;padding:3px 6px;border-radius:4px;font-size:10px;font-weight:700;color:oklch(0.43 0.13 285);background:oklch(0.95 0.05 285);"><i class="ph ph-sparkle" style="font-size:11px;"></i>AI 推荐</span>
+      </div>
+      <div style="margin-top:5px;color:var(--ink-faint);font-size:11px;line-height:1.4;">LLM 推荐字段 → 属性映射 · 人工确认</div>
+    </div>
+  </button>
+
+</div>
+
+<!-- 右侧：详情面板 -->
+
+<!-- 步骤1详情 -->
+<div class="pipe-detail" data-pipe-detail="0" style="display:block;min-width:0;">
+  <div class="card-head"><div><h2>数据源列表</h2><p>程序解析 · 3 个 csv 文件已登记为数据源</p></div>
+    <button class="primary-button" style="min-height:30px;padding:0 10px;font-size:11px;" data-toast-message="进入下一步存储。">下一步 <i class="ph ph-arrow-right"></i></button>
+  </div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>文件名</th><th>类型</th><th>行数</th><th>列数</th><th>状态</th></tr></thead><tbody>
+    <tr data-selectable class="is-selected"><td><strong>customers.csv</strong><span class="table-sub mono">客户主数据</span></td><td><span class="type-badge">csv</span></td><td>8</td><td>7</td><td><span class="status-badge ok">已连接</span></td></tr>
+    <tr data-selectable><td><strong>sales_orders.csv</strong><span class="table-sub mono">销售订单</span></td><td><span class="type-badge">csv</span></td><td>12</td><td>6</td><td><span class="status-badge ok">已连接</span></td></tr>
+    <tr data-selectable><td><strong>products.csv</strong><span class="table-sub mono">产品目录</span></td><td><span class="type-badge">csv</span></td><td>24</td><td>5</td><td><span class="status-badge ok">已连接</span></td></tr>
+  </tbody></table></div>
+  <div style="padding:14px 18px;border-top:1px solid var(--line);">
+    <div style="border:2px dashed var(--line-strong);border-radius:var(--radius);padding:22px 16px;text-align:center;color:var(--ink-faint);font-size:12px;background:var(--surface-subtle);cursor:pointer;">
+      <i class="ph ph-file-arrow-up" style="font-size:24px;display:block;margin-bottom:6px;color:var(--accent-strong);"></i>
+      拖拽或点击上传更多 csv / excel
+    </div>
+  </div>
+</div>
+
+<!-- 步骤2详情 -->
+<div class="pipe-detail" data-pipe-detail="1" style="display:none;min-width:0;">
+  <div class="card-head"><div><h2>字段 schema 确认</h2><p>customers.csv · 由 pandas + 内置类型推断器生成（无 LLM 参与）</p></div>
+    <button class="primary-button" style="min-height:30px;padding:0 10px;font-size:11px;" data-toast-message="确认后注册数据集版本。"><i class="ph ph-database"></i>确认并注册</button>
+  </div>
+  <div style="padding:16px 18px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px;border-bottom:1px solid var(--line);background:oklch(0.997 0.002 155);">
+    <div><span class="faint small">数据集</span><div style="font-size:15px;font-weight:700;margin-top:4px;">customers</div></div>
+    <div><span class="faint small">行数</span><div style="font-size:15px;font-weight:700;margin-top:4px;">8</div></div>
+    <div><span class="faint small">字段</span><div style="font-size:15px;font-weight:700;margin-top:4px;">7</div></div>
+    <div><span class="faint small">状态</span><div style="margin-top:4px;"><span class="status-badge draft">待注册</span></div></div>
+  </div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>字段</th><th>推断类型</th><th>唯一值</th><th>空值</th><th>样例</th><th></th></tr></thead><tbody>
+    <tr><td><strong>customer_id</strong></td><td>string</td><td>8 / 8</td><td>0%</td><td>C001, C002</td><td><span class="status-badge info">主键</span></td></tr>
+    <tr><td><strong>name</strong></td><td>string</td><td>8 / 8</td><td>0%</td><td>华南新能源...</td><td></td></tr>
+    <tr><td><strong>region</strong></td><td>string</td><td>5 / 8</td><td>0%</td><td>华南, 华东</td><td><span class="type-badge">枚举 5</span></td></tr>
+    <tr><td><strong>industry</strong></td><td>string</td><td>8 / 8</td><td>0%</td><td>汽车制造...</td><td></td></tr>
+    <tr><td><strong>credit_level</strong></td><td>string</td><td>2 / 8</td><td>0%</td><td>A, B</td><td><span class="type-badge">枚举 2</span></td></tr>
+    <tr><td><strong>since</strong></td><td>integer</td><td>8 / 8</td><td>0%</td><td>2019, 2020</td><td></td></tr>
+  </tbody></table></div>
+  <div class="notice" style="margin:14px;"><i class="ph ph-info"></i><span>注册后产生不可变数据集版本 ID，后续预处理和映射均基于此版本。</span></div>
+</div>
+
+<!-- 步骤3详情：预处理 + LLM 推荐 -->
+<div class="pipe-detail" data-pipe-detail="2" style="display:none;min-width:0;">
+  <div class="card-head"><div><h2>数据预处理</h2><p>由 Python 程序执行清洗 · LLM 仅提供重命名和类型转换的候选建议</p></div>
+    <button class="primary-button" style="min-height:30px;padding:0 10px;font-size:11px;" data-toast-message="预处理完成，进入本体映射。">保存并下一步</button>
+  </div>
+  <!-- AI 推荐提示 -->
+  <div style="padding:14px 18px;border-bottom:1px solid var(--line);">
+    <div style="border:1px solid oklch(0.78 0.08 285);border-radius:8px;background:oklch(0.97 0.025 285);padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <i class="ph ph-sparkle" style="color:oklch(0.43 0.13 285);font-size:16px;"></i>
+        <strong style="font-size:13px;color:oklch(0.43 0.13 285);">LLM 推荐 · 3 条候选</strong>
+        <span class="faint small" style="margin-left:auto;">基于字段名和样例值推断</span>
+      </div>
+      <div style="display:grid;gap:6px;font-size:12px;color:oklch(0.38 0.10 155);">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <i class="ph ph-arrow-right" style="color:var(--ink-faint);font-size:11px;"></i>
+          <span style="width:140px;"><b>name</b> → <b>customer_name</b></span>
+          <span class="faint small" style="flex:1;">对齐命名规范</span>
+          <button class="primary-button" style="min-height:24px;padding:0 8px;font-size:10px;">采纳</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <i class="ph ph-arrow-right" style="color:var(--ink-faint);font-size:11px;"></i>
+          <span style="width:140px;"><b>credit_level</b> → 类型 <b>enum</b></span>
+          <span class="faint small" style="flex:1;">枚举值 ≤ 5 个，建议用枚举类型</span>
+          <button class="primary-button" style="min-height:24px;padding:0 8px;font-size:10px;">采纳</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <i class="ph ph-arrow-right" style="color:var(--ink-faint);font-size:11px;"></i>
+          <span style="width:140px;"><b>since</b> 去重依据</span>
+          <span class="faint small" style="flex:1;">已有 customer_id 唯一，建议改用 customer_id</span>
+          <button class="secondary-button" style="min-height:24px;padding:0 8px;font-size:10px;">跳过</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 操作 Tab -->
+  <div class="tabs" style="border-bottom:1px solid var(--line);">
+    <button class="tab is-active" data-tab="dedup">去重</button>
+    <button class="tab" data-tab="rename">字段重命名</button>
+    <button class="tab" data-tab="cast">类型转换</button>
+  </div>
+  <div data-panel="dedup" class="tabpanel is-active">
+    <div style="padding:18px;">
+      <div class="notice" style="margin-bottom:14px;"><i class="ph ph-git-merge"></i><span>已对数据集执行精确去重扫描：0 个精确重复行。当前默认依据 customer_id。</span></div>
+      <div style="border:1px solid var(--line);border-radius:var(--radius);">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;">去重依据字段</div>
+        <div style="padding:10px 14px;display:grid;gap:2px;">
+          <label style="display:flex;align-items:center;gap:8px;min-height:32px;font-size:12px;cursor:pointer;"><input type="checkbox" checked> customer_id</label>
+          <label style="display:flex;align-items:center;gap:8px;min-height:32px;font-size:12px;cursor:pointer;"><input type="checkbox"> name</label>
+          <label style="display:flex;align-items:center;gap:8px;min-height:32px;font-size:12px;cursor:pointer;"><input type="checkbox"> contact</label>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div data-panel="rename" class="tabpanel">
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>原字段</th><th>新字段</th><th>类型</th><th>来源</th></tr></thead><tbody>
+      <tr><td><strong>customer_id</strong></td><td><input value="customer_id" style="padding:4px 6px;border:1px solid var(--line-strong);border-radius:4px;font-size:12px;width:140px;"></td><td>string</td><td></td></tr>
+      <tr><td><strong>name</strong></td><td><input value="customer_name" style="padding:4px 6px;border:1px solid var(--accent);border-radius:4px;font-size:12px;width:140px;background:var(--accent-soft);"></td><td>string</td><td><span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;color:oklch(0.43 0.13 285);background:oklch(0.95 0.05 285);"><i class="ph ph-sparkle" style="font-size:10px;"></i>AI</span></td></tr>
+      <tr><td><strong>region</strong></td><td><input value="region" style="padding:4px 6px;border:1px solid var(--line-strong);border-radius:4px;font-size:12px;width:140px;"></td><td>string</td><td></td></tr>
+      <tr><td><strong>credit_level</strong></td><td><input value="credit_level" style="padding:4px 6px;border:1px solid var(--line-strong);border-radius:4px;font-size:12px;width:140px;"></td><td>string</td><td></td></tr>
+    </tbody></table></div>
+  </div>
+  <div data-panel="cast" class="tabpanel">
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>字段</th><th>当前</th><th>目标类型</th><th>来源</th></tr></thead><tbody>
+      <tr><td><strong>since</strong></td><td>integer</td><td><select style="padding:3px 6px;border:1px solid var(--line-strong);border-radius:4px;font-size:12px;"><option>integer</option><option selected>string</option><option>date</option></select></td><td></td></tr>
+      <tr><td><strong>credit_level</strong></td><td>string</td><td><select style="padding:3px 6px;border:1px solid var(--accent);border-radius:4px;font-size:12px;background:var(--accent-soft);"><option>string</option><option selected>enum</option></select></td><td><span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;color:oklch(0.43 0.13 285);background:oklch(0.95 0.05 285);"><i class="ph ph-sparkle" style="font-size:10px;"></i>AI</span></td></tr>
+    </tbody></table></div>
+  </div>
+</div>
+
+<!-- 步骤4详情：本体映射 + LLM 推荐 -->
+<div class="pipe-detail" data-pipe-detail="3" style="display:none;min-width:0;">
+  <div class="card-head"><div><h2>字段映射</h2><p>制造运营本体 v1.0 · LLM 基于字段名与属性语义推荐 · 人类最终确认</p></div>
+    <button class="primary-button" style="min-height:30px;padding:0 10px;font-size:11px;" data-toast-message="映射已确认，数据接入本体。"><i class="ph ph-check"></i>确认映射</button>
+  </div>
+  <!-- AI 推荐 -->
+  <div style="padding:14px 18px;border-bottom:1px solid var(--line);">
+    <div style="border:1px solid oklch(0.78 0.08 285);border-radius:8px;background:oklch(0.97 0.025 285);padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <i class="ph ph-sparkle" style="color:oklch(0.43 0.13 285);font-size:16px;"></i>
+        <strong style="font-size:13px;color:oklch(0.43 0.13 285);">LLM 自动预填 · 4 条映射</strong>
+        <span class="faint small" style="margin-left:auto;">已自动应用 · 可逐条调整</span>
+      </div>
+      <div style="font-size:12px;color:oklch(0.38 0.10 155);">已基于字段名相似度和类型兼容性预填映射建议，可按需修改或跳过。</div>
+    </div>
+  </div>
+  <div style="display:grid;">
+    <div style="padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;background:oklch(0.997 0.002 155);">
+      <span class="faint small" style="width:140px;">数据集字段</span>
+      <span class="faint small" style="width:30px;"></span>
+      <span class="faint small">本体实体属性</span>
+      <span class="faint small" style="margin-left:auto;">来源</span>
+    </div>
+    <div class="resource-line"><i class="ph ph-file-text" style="color:var(--ink-faint);"></i><div><strong>customer_id</strong><span class="sub">string · 8 值</span></div>
+      <select style="padding:3px 6px;border:1px solid var(--accent);border-radius:4px;font-size:11px;width:170px;background:var(--accent-soft);"><option selected>Customer.customer_id</option><option>Customer.name</option><option>— 不映射 —</option></select>
+      <span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;color:oklch(0.43 0.13 285);background:oklch(0.95 0.05 285);"><i class="ph ph-sparkle" style="font-size:10px;"></i>AI 推荐</span>
+    </div>
+    <div class="resource-line"><i class="ph ph-file-text" style="color:var(--ink-faint);"></i><div><strong>name</strong><span class="sub">string · 8 值</span></div>
+      <select style="padding:3px 6px;border:1px solid var(--accent);border-radius:4px;font-size:11px;width:170px;background:var(--accent-soft);"><option>Customer.customer_id</option><option selected>Customer.name</option><option>— 不映射 —</option></select>
+      <span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;color:oklch(0.43 0.13 285);background:oklch(0.95 0.05 285);"><i class="ph ph-sparkle" style="font-size:10px;"></i>AI 推荐</span>
+    </div>
+    <div class="resource-line"><i class="ph ph-file-text" style="color:var(--ink-faint);"></i><div><strong>region</strong><span class="sub">string · 5 枚举</span></div>
+      <select style="padding:3px 6px;border:1px solid var(--accent);border-radius:4px;font-size:11px;width:170px;background:var(--accent-soft);"><option>Customer.customer_id</option><option selected>Customer.region</option><option>— 不映射 —</option></select>
+      <span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;color:oklch(0.43 0.13 285);background:oklch(0.95 0.05 285);"><i class="ph ph-sparkle" style="font-size:10px;"></i>AI 推荐</span>
+    </div>
+    <div class="resource-line"><i class="ph ph-file-text" style="color:var(--ink-faint);"></i><div><strong>credit_level</strong><span class="sub">string · 2 枚举</span></div>
+      <select style="padding:3px 6px;border:1px solid var(--line-strong);border-radius:4px;font-size:11px;width:170px;"><option>Customer.customer_id</option><option>Customer.credit_level</option><option selected>— 不映射 —</option></select>
+      <span class="faint small">人工设置</span>
+    </div>
+    <div class="resource-line"><i class="ph ph-file-text" style="color:var(--ink-faint);"></i><div><strong>since</strong><span class="sub">integer · 4 值</span></div>
+      <select style="padding:3px 6px;border:1px solid var(--line-strong);border-radius:4px;font-size:11px;width:170px;"><option selected>— 不映射 —</option><option>Customer.since</option></select>
+      <span class="faint small">人工设置</span>
+    </div>
+  </div>
+  <div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);">
+    <span class="faint small"><i class="ph ph-check-circle" style="color:var(--success);"></i> 3 条 AI 预填 · 1 条人工</span>
+    <button class="secondary-button" style="min-height:30px;padding:0 10px;font-size:11px;" data-toast-message="映射草稿已保存。">保存草稿</button>
+  </div>
+</div>
+
+</div>
+</div>
+
+</main>
+</div>
+</div>
+<div class="toast" data-toast><i class="ph ph-check-circle"></i><span></span></div>
+<script src="prototype-system.js"></script>
+<script>
+(function(){
+  var steps = document.querySelectorAll('.pipe-stage');
+  var details = document.querySelectorAll('.pipe-detail');
+
+  function setActive(idx) {
+    steps.forEach(function(s,i){
+      var active = i===idx;
+      s.classList.toggle('is-active', active);
+      s.style.background = active ? 'var(--accent-soft)' : '#fff';
+      s.style.borderLeftColor = active ? 'var(--accent)' : 'transparent';
+      var circle = s.querySelector('.step-circle');
+      circle.style.color = active ? '#fff' : 'var(--ink-faint)';
+      circle.style.background = active ? 'var(--accent)' : 'var(--surface-subtle)';
+      var strong = s.querySelector('strong');
+      strong.style.color = active ? 'var(--ink)' : 'var(--ink-soft)';
+    });
+    details.forEach(function(d,i){ d.style.display = i===idx ? 'block' : 'none'; });
+  }
+
+  steps.forEach(function(s,i){ s.addEventListener('click',function(){ setActive(i); }); });
+
+  // 下一步按钮
+  var nextBtns = document.querySelectorAll('.pipe-detail .primary-button');
+  nextBtns.forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var detail = btn.closest('.pipe-detail');
+      var idx = parseInt(detail.dataset.pipeDetail);
+      if(idx < 3) setActive(idx + 1);
+    });
+  });
+})();
+</script>
+</body>
+</html>

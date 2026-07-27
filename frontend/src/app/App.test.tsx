@@ -16,8 +16,8 @@ it("shows every MVP navigation destination when status API is unavailable", () =
 
   expect(screen.getByRole("link", { name: "数据与管道" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "本体管理" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "智能问数" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "治理中心" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "智能助手" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "治理与可追溯" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "模型管理" })).toBeInTheDocument();
   expect(screen.queryByText("风险驾驶舱")).not.toBeInTheDocument();
 });

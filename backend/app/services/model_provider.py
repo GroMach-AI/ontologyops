@@ -93,6 +93,52 @@ class ModelProviderService:
             return False, "无法验证连接，请检查 Key、Base URL 与网络。"
         return True, None
 
+    def _chat_for_ontology(self, user_prompt: str) -> ModelCompletion:
+        """Call the default model for ontology analysis with a long-form prompt."""
+        provider = self._default_agent_provider()
+        if provider is None or provider.provider == "Mock Provider":
+            return ModelCompletion(
+                '{"summary": "Mock 模式：未检测到可用的真实模型。请先在模型管理页验证 DeepSeek 或 GPT 连接。", "entities": [], "relationships": [], "questions": []}',
+                "Mock Provider", "ontologyops-mock", "mock",
+            )
+        api_key = os.getenv(provider.api_key_env or "")
+        if provider.verification_status != "verified" or not api_key or not provider.base_url:
+            return ModelCompletion(
+                '{"summary": "真实模型未验证或缺少凭据。", "entities": [], "relationships": [], "questions": []}',
+                provider.provider, provider.model_name, "mock",
+            )
+        payload = {
+            "model": provider.model_name,
+            "temperature": 0,
+            "max_tokens": 16384,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": "你是企业本体建模专家。基于实际数据做语义分析。不编造数据，不输出代码或 SQL。"},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        try:
+            response = httpx.post(
+                f"{provider.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+                timeout=60,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = str(data["choices"][0]["message"]["content"])
+            usage = data.get("usage", {})
+            return ModelCompletion(
+                content=content,
+                provider=provider.provider,
+                model_name=provider.model_name,
+                mode="real",
+                input_tokens=usage.get("prompt_tokens"),
+                output_tokens=usage.get("completion_tokens"),
+            )
+        except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
+            raise ModelProviderUnavailable("LLM 调用失败：" + str(error)) from error
+
     def _default_agent_provider(self) -> ModelProviderConfig | None:
         with Session(self.engine) as session:
             provider = session.scalar(
