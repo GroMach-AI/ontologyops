@@ -96,7 +96,6 @@ export function AppShell({ children, role, onRoleChange, ontologies, onCreated }
           <span className="oo-status-dot" />
           <span>本地运行</span>
         </div>
-        <div className="oo-top-version">单租户 MVP</div>
         <div className="oo-top-tools" aria-label="全局工具">
           <button className="oo-top-icon" type="button" aria-label="通知">
             <i className="ph ph-bell" aria-hidden="true" />
@@ -126,7 +125,6 @@ export function AppShell({ children, role, onRoleChange, ontologies, onCreated }
           </nav>
           <div className="oo-sidebar-foot">
             <span>当前角色</span>
-            <strong>{roleLabels[role]}</strong>
             <select
               aria-label="切换当前角色"
               value={role}
