@@ -11,6 +11,7 @@ export type TrustedAnswer = {
     ontology_version: string;
   };
   tool_calls: Array<{ name: string; status: string }>;
+  model: { provider: string; model_name: string; mode: "real" | "mock" | "deterministic" };
 };
 
 export async function sendAgentMessage(message: string, role: DemoRole): Promise<TrustedAnswer> {

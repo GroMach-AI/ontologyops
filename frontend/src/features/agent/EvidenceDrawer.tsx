@@ -1,8 +1,21 @@
-import { X } from "lucide-react";
+import { Database, X } from "lucide-react";
 
 import type { TrustedAnswer } from "./agentApi";
 
 export function EvidenceDrawer({ answer, onClose }: { answer: TrustedAnswer; onClose: () => void }) {
-  const evidenceTitle = answer.evidence.some((item) => item.kind === "document") ? "文档证据" : answer.evidence.some((item) => item.kind === "object_count") ? "对象统计证据" : "风险证据";
-  return <div className="drawer-backdrop"><aside aria-label="关联证据" aria-modal="true" className="evidence-drawer" role="dialog"><div className="drawer-header"><div><p className="eyebrow">本体关联证据</p><h2>关联证据</h2></div><button aria-label="关闭关联证据" className="icon-button" onClick={onClose}><X size={18} /></button></div><section className="drawer-section"><span className="eyebrow">来源数据集</span><div className="chip-list">{answer.provenance.sources.map((source) => <span className="chip" key={source}>{source}</span>)}</div></section><section className="drawer-section"><span className="eyebrow">关联对象</span><ul className="evidence-list">{answer.objects.length ? answer.objects.map((object) => <li key={`${object.type}-${object.id}`}><b>{object.label}</b><span>{object.type} · {object.id}</span></li>) : <li><span>本次回答未涉及结构化业务对象。</span></li>}</ul></section><section className="drawer-section"><span className="eyebrow">{evidenceTitle}</span><ul className="evidence-list">{answer.evidence.map((item, index) => item.kind === "document" ? <li key={index}><b>{String(item.filename)}</b><span>{String(item.snippet)}</span></li> : item.kind === "object_count" ? <li key={index}><b>{String(item.object_type)} · {String(item.count)} 条</b><span>来自 {String(item.source)} 的受控对象计数。</span></li> : <li key={index}><b>{String(item.supplier)} · {String(item.order_number)}</b><span>{String(item.material)}，当前库存 {String(item.quantity_on_hand ?? "-")}，安全库存 {String(item.safety_stock ?? "-")}</span></li>)}</ul></section></aside></div>;
+  return <div className="oo-agent-drawer-backdrop" onMouseDown={onClose}>
+    <aside aria-label="关联证据" aria-modal="true" className="oo-agent-drawer" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+      <header><div><span className="oo-eyebrow">可追溯证据</span><h2>本体查询记录</h2></div><button aria-label="关闭关联证据" className="oo-close-button" onClick={onClose}><X size={18} /></button></header>
+      <section><span className="oo-agent-drawer-label">数据来源</span><div className="oo-agent-source-list">{answer.provenance.sources.length ? answer.provenance.sources.map((source) => <span key={source}>{source}</span>) : <span>本次实体尚未映射数据集</span>}</div></section>
+      <section><span className="oo-agent-drawer-label">查询结果</span><ul className="oo-agent-evidence-list">{answer.evidence.length ? answer.evidence.map((item, index) => <EvidenceItem item={item} key={index} />) : <li>本次未执行数据实体查询。</li>}</ul></section>
+      <section className="oo-agent-trace"><Database size={15} /><div><strong>{answer.provenance.ontology_version}</strong><span>{answer.provenance.metric_definition}</span></div></section>
+    </aside>
+  </div>;
+}
+
+function EvidenceItem({ item }: { item: Record<string, unknown> }) {
+  if (item.kind === "entity_no_data") return <li><strong>{String(item.entity_label)}</strong><span>尚无已映射实体数据</span></li>;
+  if (item.kind === "entity_count") return <li><strong>{String(item.entity_id)} · {String(item.count)} 条</strong><span>数据集 {String(item.dataset_id)} · 映射 {String(item.mapping_id)}</span></li>;
+  const properties = item.properties && typeof item.properties === "object" ? Object.entries(item.properties as Record<string, unknown>).slice(0, 4).map(([key, value]) => `${key}: ${String(value)}`).join(" · ") : "";
+  return <li><strong>{String(item.entity_key ?? item.entity_id)}</strong><span>{properties || "实体实例"}</span><small>数据集 {String(item.dataset_id)}</small></li>;
 }

@@ -46,8 +46,8 @@ class ModelProviderService:
             "temperature": float(provider.temperature),
             "max_tokens": provider.max_tokens,
             "messages": [
-                {"role": "system", "content": "你是企业供应链分析助手。只能基于给定的受控本体证据作答，不要编造数据，不要给出写回动作。"},
-                {"role": "user", "content": f"请用简洁中文总结以下证据并给出人工处置建议：{context}"},
+                {"role": "system", "content": "你是企业本体智能助手。只能依据给定的受控本体查询结果作答；不得编造、补全或推断未提供的数据，不得生成 SQL、写回动作或审批建议。保留实体数量、名称和证据范围，使用简洁中文直接回答用户问题。"},
+                {"role": "user", "content": f"请根据以下受控查询结果直接回答用户：{context}"},
             ],
         }
         try:

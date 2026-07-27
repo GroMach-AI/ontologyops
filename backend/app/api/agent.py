@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
@@ -24,10 +21,7 @@ def chat(
 ) -> dict[str, object]:
     if x_demo_role not in {"admin", "modeler", "operator"}:
         raise HTTPException(status_code=400, detail="Unknown demo role")
-    data_dir = Path(os.getenv("ONTOLOGYOPS_DATA_DIR", "../data")).resolve()
     try:
-        return AgentService(runtime_metadata_engine(), data_dir, x_demo_role).chat(
-            request.message
-        )
+        return AgentService(runtime_metadata_engine(), x_demo_role).chat(request.message)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
