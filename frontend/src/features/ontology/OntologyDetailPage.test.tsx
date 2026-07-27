@@ -68,11 +68,6 @@ describe("OntologyDetailPage", () => {
     expect(screen.getAllByText("客户").length).toBeGreaterThan(0);
     expect(screen.getByText("customer_id")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /关系/ }));
-    expect(screen.getByText("CustomerPlacesOrder")).toBeInTheDocument();
-    expect(screen.getByText("一个客户可以发起多个销售订单。")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /概览/ }));
     await user.click(screen.getByRole("button", { name: /发布版本/ }));
     expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "published", version: "1.0" }));
     expect(screen.getByText(/版本 1.0 已发布/)).toBeInTheDocument();

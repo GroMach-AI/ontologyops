@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import type { DemoRole } from "../../components/AppShell";
-import type { Ontology, OntologyEntity } from "./OntologyPage";
+import type { Ontology } from "./OntologyPage";
+import { OntologyGraphView } from "./OntologyGraphView";
 
-type DetailTab = "overview" | "entities" | "relationships" | "versions";
+type DetailTab = "graph" | "entities" | "relationships" | "versions";
 
 type OntologyDetailPageProps = {
   role: DemoRole;
@@ -13,7 +14,7 @@ type OntologyDetailPageProps = {
 };
 
 const tabLabels: Array<{ id: DetailTab; label: string; icon: string }> = [
-  { id: "overview", label: "概览", icon: "ph-squares-four" },
+  { id: "graph", label: "关系图谱", icon: "ph-graph" },
   { id: "entities", label: "实体", icon: "ph-cube" },
   { id: "relationships", label: "关系", icon: "ph-share-network" },
   { id: "versions", label: "版本", icon: "ph-git-branch" },
@@ -27,63 +28,14 @@ function cardinalityLabel(type: string) {
   return type || "待确认";
 }
 
-function EntityInspector({ entity }: { entity: OntologyEntity | null }) {
-  if (!entity) {
-    return (
-      <aside className="oo-detail-inspector oo-detail-inspector-empty">
-        <i className="ph ph-cursor-click" aria-hidden="true" />
-        <strong>选择一个实体</strong>
-        <span>点击画布中的实体卡片，查看属性与来源。</span>
-      </aside>
-    );
-  }
-
-  return (
-    <aside className="oo-detail-inspector">
-      <div className="oo-inspector-head">
-        <span className="oo-detail-icon"><i className="ph ph-cube" aria-hidden="true" /></span>
-        <div>
-          <strong>{entity.label || entity.name}</strong>
-          <code>{entity.name}</code>
-        </div>
-      </div>
-      <p>{entity.description || "尚未补充业务定义。"}</p>
-      <div className="oo-inspector-source">
-        <span>数据来源</span>
-        <strong>{entity.source_file || "待映射"}</strong>
-      </div>
-      <div className="oo-inspector-section-title">属性 · {entity.properties.length}</div>
-      <div className="oo-property-list">
-        {entity.properties.length > 0 ? entity.properties.map((property, index) => (
-          <div className="oo-property-row" key={`${property.name}-${index}`}>
-            <span className="oo-property-key">
-              {property.is_key ? <i className="ph ph-key" title="主键" aria-label="主键" /> : <i className="ph ph-dot-outline" aria-hidden="true" />}
-              <b>{property.name}</b>
-            </span>
-            <code>{property.type}</code>
-            <small>{property.description || "—"}</small>
-          </div>
-        )) : (
-          <div className="oo-detail-mini-empty">暂无属性</div>
-        )}
-      </div>
-    </aside>
-  );
-}
-
 export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetailPageProps) {
   const { id } = useParams();
   const navigate = useNavigate();
   const ontology = ontologies.find((item) => item.id === id);
-  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+  const [activeTab, setActiveTab] = useState<DetailTab>("graph");
   const [selectedEntityName, setSelectedEntityName] = useState("");
   const [notice, setNotice] = useState("");
   const editable = role === "admin" || role === "modeler";
-
-  const selectedEntity = useMemo(() => {
-    if (!ontology) return null;
-    return ontology.entities.find((entity) => entity.name === selectedEntityName) ?? ontology.entities[0] ?? null;
-  }, [ontology, selectedEntityName]);
 
   if (!ontology) {
     return (
@@ -158,53 +110,12 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
         ))}
       </nav>
 
-      {activeTab === "overview" ? (
-        <div className="oo-detail-content">
-          <section className="oo-detail-metrics" aria-label="本体指标">
-            <div><span className="oo-detail-metric-icon"><i className="ph ph-cube" /></span><p><strong>{ontology.objects}</strong><span>实体类型</span></p></div>
-            <div><span className="oo-detail-metric-icon"><i className="ph ph-share-network" /></span><p><strong>{ontology.links}</strong><span>关系类型</span></p></div>
-            <div><span className="oo-detail-metric-icon"><i className="ph ph-function" /></span><p><strong>{ontology.rules}</strong><span>规则与确认</span></p></div>
-            <div><span className="oo-detail-metric-icon"><i className="ph ph-check-circle" /></span><p><strong>{ontology.status === "published" ? "可用" : "草稿"}</strong><span>当前状态</span></p></div>
-          </section>
-
-          <section className="oo-detail-model-section">
-            <div className="oo-detail-section-head">
-              <div><span>语义模型</span><h3>实体关系视图</h3></div>
-              <small>点击实体查看属性</small>
-            </div>
-            <div className="oo-detail-model-layout">
-              <div className="oo-detail-canvas">
-                {ontology.entities.length > 0 ? (
-                  <div className="oo-entity-map">
-                    {ontology.entities.map((entity) => {
-                      const isSelected = selectedEntity?.name === entity.name;
-                      return (
-                        <button className={`oo-entity-node${isSelected ? " is-selected" : ""}`} type="button" key={entity.name} onClick={() => setSelectedEntityName(entity.name)}>
-                          <span className="oo-detail-icon"><i className="ph ph-cube" /></span>
-                          <span><strong>{entity.label || entity.name}</strong><code>{entity.name}</code></span>
-                          <small>{entity.properties.length} 个属性</small>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="oo-detail-canvas-empty"><i className="ph ph-cube" /><span>尚未定义实体</span></div>
-                )}
-                {ontology.relationships.length > 0 ? (
-                  <div className="oo-relationship-ribbon">
-                    <span>已连接关系</span>
-                    {ontology.relationships.slice(0, 5).map((relationship, index) => (
-                      <div key={`${relationship.name}-${index}`}>
-                        <b>{relationship.from_entity}</b><i className="ph ph-arrow-right" /><b>{relationship.to_entity}</b><small>{cardinalityLabel(relationship.type)}</small>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <EntityInspector entity={selectedEntity} />
-            </div>
-          </section>
-        </div>
+      {activeTab === "graph" ? (
+        <OntologyGraphView
+          entities={ontology.entities}
+          relationships={ontology.relationships}
+          initialSelected={selectedEntityName}
+        />
       ) : null}
 
       {activeTab === "entities" ? (
@@ -214,7 +125,7 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
             <table className="oo-detail-table">
               <thead><tr><th>实体</th><th>英文标识</th><th>属性</th><th>主键</th><th>来源</th></tr></thead>
               <tbody>{ontology.entities.map((entity) => (
-                <tr key={entity.name} onClick={() => { setSelectedEntityName(entity.name); setActiveTab("overview"); }}>
+                <tr key={entity.name} onClick={() => { setSelectedEntityName(entity.name); setActiveTab("graph"); }}>
                   <td><i className="ph ph-cube" /> <strong>{entity.label || entity.name}</strong></td>
                   <td><code>{entity.name}</code></td>
                   <td>{entity.properties.length}</td>
