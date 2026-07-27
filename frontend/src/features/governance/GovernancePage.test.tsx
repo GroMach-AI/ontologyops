@@ -20,6 +20,7 @@ it("shows the three evidence views without exposing rule creation", async () => 
   expect(screen.getByRole("tab", { name: "数据血缘" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: "可追溯性" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "新建质量规则" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
 });
 
 it("shows API-backed lineage and recent audit events", async () => {

@@ -18,8 +18,8 @@ type AppShellProps = {
 
 const navigation = [
   { to: "/", label: "首页", icon: "ph-house" },
-  { to: "/data-pipeline", label: "数据与管道", icon: "ph-database" },
   { to: "/ontology", label: "本体管理", icon: "ph-share-network" },
+  { to: "/data-pipeline", label: "数据管道", icon: "ph-database" },
   { to: "/apps/agent", label: "智能助手", icon: "ph-chats-circle" },
   { to: "/governance", label: "治理与可追溯", icon: "ph-shield-check" },
   { to: "/models", label: "模型管理", icon: "ph-cube" },

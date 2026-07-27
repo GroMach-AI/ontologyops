@@ -62,7 +62,6 @@ export function ModelPage({ role }: { role: DemoRole }) {
   if (!admin) return <div className="panel"><h3>模型配置仅对管理员开放</h3><p className="muted">当前角色无法读取或调整本机模型配置。</p></div>;
   const options = selected?.available_models ?? [];
   return <div className="model-page">
-    <div className="section-heading model-heading"><div><h2>模型接入</h2><p className="muted">为本体候选生成配置模型</p></div></div>
     {notice ? <p className="inline-notice" role="status">{notice}</p> : null}
     <div className="model-console">
       <aside className="provider-rail" aria-label="API Provider">

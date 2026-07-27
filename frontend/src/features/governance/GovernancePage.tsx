@@ -53,8 +53,7 @@ export function GovernancePage({ role }: { role: DemoRole }) {
 
   return <div className="oo-governance-page">
     <header className="oo-governance-heading">
-      <div><p className="oo-eyebrow">规则、血缘与审计</p><h2>治理与可追溯</h2><p>{notice}</p></div>
-      <button className="secondary-button" type="button" onClick={() => void loadGovernance()}>刷新</button>
+      <p>{notice}</p>
     </header>
     <div className="oo-governance-layout">
       <section className="oo-governance-main" aria-label="治理证据">

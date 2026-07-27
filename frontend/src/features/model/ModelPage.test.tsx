@@ -18,6 +18,15 @@ it("shows DeepSeek Flash and Pro in the approved API-key form", async () => {
   expect(screen.queryByRole("button", { name: "保存配置" })).not.toBeInTheDocument();
 });
 
+it("removes the redundant model-access heading while retaining the selected provider", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [deepseek] }) }));
+
+  render(<ModelPage role="admin" />);
+
+  expect(await screen.findByRole("heading", { name: "DeepSeek" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "模型接入" })).not.toBeInTheDocument();
+});
+
 it("keeps a model choice local until connection testing", async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [deepseek] }) });
   vi.stubGlobal("fetch", fetchMock);

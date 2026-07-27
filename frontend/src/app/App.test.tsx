@@ -14,7 +14,7 @@ it("shows every MVP navigation destination when status API is unavailable", () =
     </MemoryRouter>,
   );
 
-  expect(screen.getByRole("link", { name: "数据与管道" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "数据管道" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "本体管理" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "智能助手" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "治理与可追溯" })).toBeInTheDocument();
