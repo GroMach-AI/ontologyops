@@ -58,6 +58,8 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .oo-ontology-menu-item i { color: oklch(0.45 0.115 160); font-size: 16px; }
 .oo-ontology-menu-item small { display: block; margin-top: 2px; color: oklch(0.63 0.015 155); font-size: 10px; }
 .oo-ontology-menu-create { border-top: 1px solid oklch(0.9 0.01 155); color: oklch(0.45 0.115 160); font-weight: 720; }
+.oo-ontology-page { position:relative; }
+.oo-ontology-create-action { position:absolute; top:-51px; right:0; display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:0 13px; }
 .oo-top-status { display: flex; align-items: center; gap: 7px; color: oklch(0.7 0.12 160); font-size: 13px; }
 .oo-status-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: currentColor; }
 .oo-top-version { margin-left: auto; color: oklch(0.7 0.012 155); font-size: 12px; letter-spacing: .02em; }

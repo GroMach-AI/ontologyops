@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { DemoRole } from "../../components/AppShell";
 
 export type OntologyProperty = {
@@ -131,6 +131,7 @@ export function normalizeLLMAnalysis(value: unknown, fallback?: LLMAnalysis): LL
 
 export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; ontologies: Ontology[]; onCreated?: (onto: Ontology) => void }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showCreate, setShowCreate] = useState(false);
   const [createStep, setCreateStep] = useState<"form" | "llm" | "review">("form");
   const [creating, setCreating] = useState(false);
@@ -171,6 +172,12 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
     setEditing(false);
     setRefining(false);
   }
+
+  useEffect(() => {
+    if (!editable || !new URLSearchParams(location.search).has("create")) return;
+    openCreate();
+    navigate("/ontology", { replace: true });
+  }, [editable, location.search, navigate]);
 
   async function runProfiling() {
     const name = formName.trim();
@@ -392,11 +399,17 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
   }
 
   return (
-    <div>
+    <div className="oo-ontology-page">
       {notice ? (
         <div className="oo-notice">{notice}
           <button className="oo-notice-close" onClick={() => setNotice("")}><i className="ph ph-x"></i></button>
         </div>
+      ) : null}
+
+      {editable ? (
+        <button className="oo-primary-button oo-ontology-create-action" type="button" onClick={openCreate}>
+          <i className="ph ph-plus" aria-hidden="true" />创建本体
+        </button>
       ) : null}
 
       {ontologies.length === 0 ? (
@@ -404,25 +417,14 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
           <i className="ph ph-stack oo-empty-icon" />
           <h2 className="oo-empty-title">还没有本体</h2>
           <p className="oo-empty-desc">本体是组织的运营语义层，建在数字资产之上。上传业务资料后，系统自动分析数据结构并生成可审核的语义候选。</p>
-          {editable ? (
-            <button className="oo-primary-button" type="button" onClick={openCreate}>
-              <i className="ph ph-plus"></i>创建第一个本体
-            </button>
-          ) : (
+          {!editable ? (
             <p className="muted">请联系管理员或本体建模者创建本体。</p>
-          )}
+          ) : null}
         </div>
       ) : null}
 
       {ontologies.length > 0 ? (
         <div>
-          {editable ? (
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-              <button className="oo-secondary-button" type="button" onClick={openCreate}>
-                <i className="ph ph-plus"></i>创建本体
-              </button>
-            </div>
-          ) : null}
           <div className="oo-card-grid">
             {ontologies.map((o) => (
               <div className="oo-onto-card" key={o.id}>

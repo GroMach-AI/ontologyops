@@ -42,7 +42,12 @@ export function AppShell({ children, role, onRoleChange, ontologies }: AppShellP
     ?? null;
   const switcherLabel = currentOntology
     ? `${currentOntology.name} · ${currentOntology.version}${currentOntology.status === "published" ? " 已发布" : " 草稿"}`
-    : "暂无本体";
+    : "创建或选择本体";
+
+  function goCreateOntology() {
+    setMenuOpen(false);
+    navigate("/ontology?create=1");
+  }
 
   return (
     <div className="oo-app">
@@ -59,7 +64,7 @@ export function AppShell({ children, role, onRoleChange, ontologies }: AppShellP
             style={!currentOntology ? { color: "oklch(0.58 0.04 155)" } : undefined}
           >
             <span>{switcherLabel}</span>
-            <i className="ph ph-caret-down" aria-hidden="true" />
+            <i className={"ph " + (currentOntology ? "ph-caret-down" : "ph-plus")} aria-hidden="true" />
           </button>
           {menuOpen ? (
             <div className="oo-ontology-menu" role="menu">
@@ -77,6 +82,10 @@ export function AppShell({ children, role, onRoleChange, ontologies }: AppShellP
                   在本体管理页面点击"创建本体"开始第一个本体的建模。
                 </div>
               )}
+              <button className="oo-ontology-menu-item oo-ontology-menu-create" type="button" onClick={goCreateOntology}>
+                <i className="ph ph-plus" aria-hidden="true" />
+                <span>创建本体</span>
+              </button>
             </div>
           ) : null}
         </div>
