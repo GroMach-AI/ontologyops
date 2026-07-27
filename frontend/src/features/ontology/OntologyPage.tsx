@@ -148,13 +148,33 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
     setProfiling(null); setLlm(null); setQAnswers({}); setQIndex(0);
     setCreateStep("form"); setShowCreate(true);
   }
-  function closeCreate() { setShowCreate(false); }
+  function closeCreate() {
+    setShowCreate(false);
+    // reset dialog state so a fresh open starts clean
+    setCreateStep("form");
+    setFormName("");
+    setFormScope("");
+    setFiles([]);
+    setProfiling(null);
+    setLlm(null);
+    setQIndex(0);
+    setQAnswers({});
+    setCustomDraft("");
+    setEditing(false);
+    setRefining(false);
+  }
 
   async function runProfiling() {
     const name = formName.trim();
     const scope = formScope.trim();
-    if (!name || !scope) return;
-    if (files.length === 0) { setCreateStep("review"); return; }
+    if (!name || !scope) {
+      setNotice("请先填写本体名称与企业建模目标。");
+      return;
+    }
+    if (files.length === 0) {
+      setNotice("请先上传至少一个业务资料（CSV / Excel / PDF / Word）。");
+      return;
+    }
     setCreating(true);
     const form = new FormData();
     form.append("name", name);
@@ -168,6 +188,7 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
       setCreateStep("llm");
     } catch (e) {
       setNotice("数据解析失败：" + (e instanceof Error ? e.message : "请检查文件格式。"));
+      setCreateStep("form");  // make sure dialog form remains reachable
     } finally {
       setCreating(false);
     }
@@ -237,8 +258,9 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
       setQIndex(0);
       setQAnswers({});
       setCreateStep("llm");
-    } catch {
-      setNotice("LLM 分析请求失败。");
+    } catch (e) {
+      setNotice("LLM 分析请求失败：" + (e instanceof Error ? e.message : "请检查 API Key 配置。"));
+      setCreateStep("form");  // let the user re-upload or retry instead of stuck dialog
     } finally {
       setAnalyzing(false);
     }

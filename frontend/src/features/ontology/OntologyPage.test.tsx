@@ -53,6 +53,10 @@ describe("OntologyPage candidate review", () => {
             summary: "已根据回答确认客户实体。",
           }),
         }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -86,6 +90,7 @@ describe("OntologyPage candidate review", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
     await user.click(screen.getByRole("button", { name: /确认并创建本体/ }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     expect(await screen.findByRole("heading", { name: "客户本体" })).toBeInTheDocument();
     expect(screen.getByText("客户运营分析")).toBeInTheDocument();
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({
