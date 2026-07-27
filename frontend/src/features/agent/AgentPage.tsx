@@ -44,7 +44,7 @@ export function AgentPage({ role }: { role: DemoRole }) {
   }
 
   return <div aria-label="智能助手工作台" className="oo-agent-page"><section className="oo-agent-main">
-    <div aria-live="polite" className="oo-agent-thread" ref={threadRef}>
+    <div aria-live="polite" className={`oo-agent-thread${turns.length === 0 ? " is-empty" : ""}`} ref={threadRef}>
       {turns.length === 0 ? <EmptyConversation onChoose={setMessage} /> : turns.map((turn, index) => <div className="oo-agent-turn" key={`${turn.question}-${index}`}>
         <article className="oo-chat-message oo-chat-user"><span>你</span><p>{turn.question}</p></article>
         <AnswerCard answer={turn.answer} onEvidence={() => setEvidenceAnswer(turn.answer)} />
