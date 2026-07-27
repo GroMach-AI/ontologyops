@@ -50,11 +50,32 @@ export function OntologyDetailPage({ role, ontologies, onUpdate }: OntologyDetai
     );
   }
 
-  function publishOntology() {
+  async function publishOntology() {
     if (!ontology) return;
     const published = { ...ontology, status: "published" as const, version: "1.0", updated: "刚刚" };
+    // 先更新本地状态（立即可见），再持久化到后端（刷新不丢）
     onUpdate(published);
     setNotice("版本 1.0 已发布，本体现在可供应用层使用。");
+    try {
+      await fetch("/api/ontology-drafts/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: published.id,
+          name: published.name,
+          scope: published.scope,
+          status: published.status,
+          version: published.version,
+          objects: published.objects,
+          links: published.links,
+          rules: published.rules,
+          entities: published.entities,
+          relationships: published.relationships,
+        }),
+      });
+    } catch {
+      /* persistence failure is non-blocking */
+    }
   }
 
   return (

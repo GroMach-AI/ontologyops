@@ -33,8 +33,8 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .model-console { min-height: 380px; }
 
 /* === OntologyOps shell · 对齐静态原型 === */
-.oo-app { min-height: 100vh; background: oklch(0.982 0.004 145); }
-.oo-topbar { height: 64px; display: flex; align-items: center; gap: 22px; padding: 0 28px; color: oklch(0.94 0.005 155); background: oklch(0.17 0.018 155); border-bottom: 1px solid oklch(0.3 0.018 155); }
+.oo-app { display:grid; grid-template-rows:64px 1fr; height:100vh; overflow:hidden; background:oklch(0.982 0.004 145); }
+.oo-topbar { height:64px; display:flex; align-items:center; gap:22px; padding:0 28px; color:oklch(0.94 0.005 155); background:oklch(0.17 0.018 155); border-bottom:1px solid oklch(0.3 0.018 155); position:sticky; top:0; z-index:30; }
 .oo-brand { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 720; letter-spacing: -.025em; }
 .oo-brand-mark { color: oklch(0.76 0.16 160); font-size: 24px; }
 .oo-switcher { position: relative; }
@@ -53,8 +53,8 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .oo-top-tools { display: flex; gap: 5px; }
 .oo-top-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 6px; color: oklch(0.9 0.006 155); background: transparent; font-size: 19px; }
 .oo-top-icon:hover { background: oklch(0.31 0.018 155); }
-.oo-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: calc(100vh - 64px); }
-.oo-sidebar { display: flex; flex-direction: column; padding: 20px 12px; border-right: 1px solid oklch(0.9 0.01 155); background: oklch(0.989 0.003 155); }
+.oo-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 0; overflow: hidden; }
+.oo-sidebar { display: flex; flex-direction: column; padding: 20px 12px; border-right: 1px solid oklch(0.9 0.01 155); background: oklch(0.989 0.003 155); overflow-y: auto; }
 .oo-nav { display: grid; gap: 5px; }
 .oo-nav-item { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 13px; border-radius: 7px; color: oklch(0.48 0.018 155); font-size: 14px; font-weight: 560; text-decoration: none; }
 .oo-nav-item i { width: 18px; font-size: 20px; }
@@ -63,7 +63,7 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 .oo-sidebar-foot { margin-top: auto; padding: 16px 10px 2px; color: oklch(0.63 0.015 155); font-size: 12px; border-top: 1px solid oklch(0.9 0.01 155); display: grid; gap: 6px; }
 .oo-sidebar-foot strong { display: block; color: oklch(0.48 0.018 155); font-size: 13px; }
 .oo-sidebar-foot select { min-height: 30px; padding: 4px 6px; border: 1px solid oklch(0.82 0.014 155); border-radius: 5px; background: #fff; color: oklch(0.23 0.018 155); font-size: 12px; }
-.oo-shell main { min-width: 0; padding: 32px 36px 42px; }
+.oo-shell main { min-width: 0; padding: 24px 32px 36px; overflow-y: auto; }
 .oo-page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
 .oo-page-heading h1 { margin: 4px 0 0; font-size: 28px; letter-spacing: -.035em; line-height: 1.12; }
 .oo-eyebrow { display: block; color: oklch(0.45 0.115 160); font-size: 12px; font-weight: 750; letter-spacing: .035em; }
@@ -123,24 +123,24 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 @media (max-width:1120px) { .oo-card-grid { grid-template-columns:1fr; } }
 
 /* === 本体详情 === */
-.oo-detail-page { display:grid; gap:18px; max-width:1280px; }
-.oo-detail-back { width:max-content; display:inline-flex; align-items:center; gap:6px; margin-bottom:-4px; padding:0; border:0; color:oklch(0.48 0.018 155); background:transparent; font-size:12px; font-weight:680; }
+.oo-detail-page { display:grid; gap:14px; max-width:1280px; }
+.oo-detail-back { width:max-content; display:inline-flex; align-items:center; gap:6px; margin-bottom:-6px; padding:0; border:0; color:oklch(0.48 0.018 155); background:transparent; font-size:12px; font-weight:680; }
 .oo-detail-back:hover { color:oklch(0.35 0.07 160); }
-.oo-detail-hero { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding:22px 24px; border:1px solid oklch(0.9 0.01 155); border-radius:10px; background:#fff; box-shadow:0 3px 8px oklch(0.16 0.016 155 / 0.05); }
-.oo-detail-title-block { min-width:0; display:flex; align-items:flex-start; gap:14px; }
+.oo-detail-hero { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:12px 18px; border:1px solid oklch(0.9 0.01 155); border-radius:9px; background:#fff; box-shadow:0 3px 8px oklch(0.16 0.016 155 / 0.05); }
+.oo-detail-title-block { min-width:0; display:flex; align-items:center; gap:12px; }
 .oo-detail-icon { width:30px; height:30px; display:grid; flex:0 0 auto; place-items:center; border:1px solid oklch(0.82 0.04 160); border-radius:7px; color:oklch(0.45 0.115 160); background:oklch(0.955 0.03 160); font-size:16px; }
-.oo-detail-icon-large { width:42px; height:42px; border-radius:9px; font-size:22px; }
-.oo-detail-title-line { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
-.oo-detail-title-line h2 { margin:0; color:oklch(0.23 0.018 155); font-size:22px; letter-spacing:-.03em; }
-.oo-detail-title-block p { max-width:760px; margin:7px 0 10px; color:oklch(0.48 0.018 155); font-size:13px; line-height:1.55; }
-.oo-detail-meta { display:flex; flex-wrap:wrap; gap:16px; color:oklch(0.63 0.015 155); font-size:11px; }
-.oo-detail-meta span { display:inline-flex; align-items:center; gap:5px; }
+.oo-detail-icon-large { width:34px; height:34px; border-radius:8px; font-size:18px; }
+.oo-detail-title-line { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.oo-detail-title-line h2 { margin:0; color:oklch(0.23 0.018 155); font-size:17px; letter-spacing:-.02em; }
+.oo-detail-title-block p { max-width:520px; margin:3px 0 0; color:oklch(0.48 0.018 155); font-size:12px; line-height:1.45; }
+.oo-detail-meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:4px; color:oklch(0.63 0.015 155); font-size:10px; }
+.oo-detail-meta span { display:inline-flex; align-items:center; gap:4px; }
 .oo-detail-actions { display:flex; flex:0 0 auto; gap:8px; }
 .oo-detail-tabs { display:flex; gap:4px; padding:0 6px; border-bottom:1px solid oklch(0.9 0.01 155); }
-.oo-detail-tabs button { display:flex; align-items:center; gap:7px; min-height:40px; padding:0 13px; border:0; border-bottom:2px solid transparent; color:oklch(0.55 0.018 155); background:transparent; font-size:13px; font-weight:650; }
+.oo-detail-tabs button { display:flex; align-items:center; gap:6px; min-height:30px; padding:0 11px; border:0; border-bottom:2px solid transparent; color:oklch(0.55 0.018 155); background:transparent; font-size:12px; font-weight:650; }
 .oo-detail-tabs button:hover { color:oklch(0.23 0.018 155); }
 .oo-detail-tabs button.is-active { color:oklch(0.45 0.115 160); border-bottom-color:oklch(0.53 0.13 160); }
-.oo-detail-tabs button span { min-width:20px; padding:2px 5px; border-radius:9px; background:oklch(0.94 0.04 160); font-size:10px; text-align:center; }
+.oo-detail-tabs button span { min-width:18px; padding:1px 4px; border-radius:9px; background:oklch(0.94 0.04 160); font-size:9px; text-align:center; }
 .oo-detail-content { display:grid; gap:16px; }
 .oo-detail-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
 .oo-detail-metrics > div { display:flex; align-items:center; gap:12px; min-height:82px; padding:15px 16px; border:1px solid oklch(0.9 0.01 155); border-radius:9px; background:#fff; }
@@ -218,7 +218,7 @@ table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 13p
 @media (max-width:1120px) { .oo-detail-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .oo-detail-model-layout { grid-template-columns:minmax(0,1fr) 260px; } }
 
 /* === Ontology graph view === */
-.oo-graph-view { display:grid; grid-template-columns:224px minmax(0,1fr) 340px; min-height:560px; border:1px solid oklch(0.9 0.01 155); border-radius:10px; overflow:hidden; background:#fff; }
+.oo-graph-view { display:grid; grid-template-columns:200px minmax(0,1fr) 400px; min-height:560px; border:1px solid oklch(0.9 0.01 155); border-radius:10px; overflow:hidden; background:#fff; }
 .oo-graph-empty { grid-column:1 / -1; padding:80px 24px; text-align:center; color:oklch(0.48 0.018 155); }
 .oo-graph-empty > i { display:block; font-size:42px; color:oklch(0.82 0.014 155); margin-bottom:12px; }
 .oo-graph-empty strong { display:block; font-size:15px; color:oklch(0.23 0.018 155); }
