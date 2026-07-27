@@ -64,10 +64,10 @@ export function GovernancePage({ role }: { role: DemoRole }) {
           <ViewTab active={activeView === "trace"} id="trace" label="可追溯性" onSelect={setActiveView} />
         </div>
         {activeView === "rules" ? <RulesView rules={rules} canRun={canRun} onRun={runRule} /> : null}
-        {activeView === "lineage" ? <LineageView /> : null}
-        {activeView === "trace" ? <TraceView /> : null}
+        {activeView === "lineage" ? <LineageView lineage={lineage} /> : null}
+        {activeView === "trace" ? <TraceView audit={audit} /> : null}
       </section>
-      <AuditRail />
+      <AuditRail audit={audit} />
     </div>
   </div>;
 }
@@ -90,22 +90,22 @@ function RulesView({ rules, canRun, onRun }: { rules: QualityRule[]; canRun: boo
   </section>;
 }
 
-function LineageView() {
+function LineageView({ lineage }: { lineage: Lineage | null }) {
   return <section className="oo-governance-view" role="tabpanel" aria-label="数据血缘">
     <div className="oo-governance-view-head"><div><h3>数据血缘</h3><p>从来源数据到本体指标，再到智能助手可引用的资源链。</p></div></div>
-    <EmptyState text="选择一个资源后，可在这里查看从来源数据到已发布本体的资源链。" />
+    {lineage?.nodes.length ? <ol className="oo-lineage-chain">{lineage.nodes.map((node, index) => <li key={node.id}><span>{index + 1}</span><div><strong>{index === 0 ? "来源文件" : node.label}</strong><small>{node.label}</small></div></li>)}</ol> : <EmptyState text="尚无可展示的资源血缘。请先运行数据管道并完成本体映射。" />}
   </section>;
 }
 
-function TraceView() {
+function TraceView({ audit }: { audit: Audit[] }) {
   return <section className="oo-governance-view" role="tabpanel" aria-label="可追溯性">
     <div className="oo-governance-view-head"><div><h3>可追溯性</h3><p>记录对资源的操作，让数据结论可以回看操作人、时间和资源类型。</p></div></div>
-    <EmptyState text="选择一次事件后，可在这里查看操作人、时间和资源类型。" />
+    {audit.length ? <ol className="oo-trace-list">{audit.slice(0, 6).map((event) => <li key={event.id}><strong>{formatEvent(event.event_type)}</strong><span>{event.actor} · {event.resource_type} · {formatTime(event.created_at)}</span></li>)}</ol> : <EmptyState text="暂无可追溯事件。运行管道、发布本体或进行智能问数后会在这里记录。" />}
   </section>;
 }
 
-function AuditRail() {
-  return <aside className="oo-audit-rail" aria-label="最近事件"><div><h3>最近事件</h3><p>影响数据、本体和智能助手回答的操作记录。</p></div><EmptyState text="正在加载最近事件。" /></aside>;
+function AuditRail({ audit }: { audit: Audit[] }) {
+  return <aside className="oo-audit-rail" aria-label="最近事件"><div><h3>最近事件</h3><p>影响数据、本体和智能助手回答的操作记录。</p></div>{audit.length ? <ol>{audit.slice(0, 6).map((event) => <li key={event.id}><strong>{formatEvent(event.event_type)}</strong><span>{event.resource_type} · {formatTime(event.created_at)}</span></li>)}</ol> : <EmptyState text="暂无审计事件。" />}</aside>;
 }
 
 function StatusBadge({ status }: { status: string }) {
