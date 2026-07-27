@@ -54,20 +54,7 @@
 
 > “原型完成”只表示信息架构、视觉与交互方向可评审；不表示后端能力、真实资源链或产品验收已完成。
 
-## 5. 原型交付物
-
-| 页面 / 文件 | 说明 |
-| --- | --- |
-| `prototypes/home-workspace.html` | 首页工作台：工作队列、发布状态、可追溯活动。 |
-| `prototypes/data-pipelines.html` | 数据集目录、受控处理、质量门禁与运行证据。 |
-| `prototypes/ontology-management-overview.html` | 本体结构总览、发布检查与资源变更。 |
-| `prototypes/ontology-object-mapping.html` | 对象、属性、映射、候选审核、指标与规则。 |
-| `prototypes/assistant.html` | 受控智能助手、工具调用轨迹、回答证据。 |
-| `prototypes/governance-lineage.html` | 策略决定、资源链和审计。 |
-| `prototypes/model-management.html` | GPT、DeepSeek、Mock 与用途路由。 |
-| `prototypes/design-qa.md` | 原型设计验收记录，结论为 `passed`。 |
-
-## 6. 当前风险与阻塞项
+## 5. 当前风险与阻塞项
 
 | 项目 | 状态 | 处理原则 |
 | --- | --- | --- |
@@ -77,7 +64,7 @@
 | 新上传数据 E2E 样本 | 已准备 | `backend/tests/fixtures/sales_orders_upload.csv` 为通过样本，`sales_orders_quality_failure.csv` 为重复订单号阻断样本；两者都不用于创建本体。 |
 | GPT / DeepSeek 凭据 | 由模型管理模块单独管理 | 智能助手只在模型已验证且本机凭据可用时调用真实模型；否则明确标记为受控确定性结果，不伪装为真实调用。 |
 
-## 7. M0 验证记录与边界
+## 6. M0 验证记录与边界
 
 - 实现提交范围：`6dba7b0`（资源/关系持久化）、`db3f0cb`（生命周期）、`7189838`（资源注册与关系）、`410ddcc`（审计链）、`afd3002`（受限 API）。每个切片前的失败测试也已独立提交到 `dev`。
 - 后端验证：`cd backend && ../../../.venv/bin/python -m pytest tests -q`，32 项通过。M0 新增测试覆盖资源表迁移、资源关系、生命周期、审计链、受限 API 和 operator 写入拒绝。
@@ -85,13 +72,13 @@
 - API 契约：仅提供 `POST /api/v1/resources`、`GET /api/v1/resources/{id}`、`POST /api/v1/resources/{id}/transition`、`POST /api/v1/resources/{id}/relations`、`GET /api/v1/resources/{id}/relations`。写入仅限 `modeler/admin`；`operator` 只读；不提供自由 SQL、删除关系、Action 或写回。
 - M0 不声明“新上传数据端到端验收通过”：它没有独立 UI，也不读取文件、执行管道或发布本体。M1 必须用非种子新文件创建 `source_asset` / `dataset_version` 后，在浏览器中记录资源、关系、状态和审计证据。
 
-## 8. 后续阶段（不属于本次 MVP）
+## 7. 后续阶段（不属于本次 MVP）
 
 1. 多源连接器、调度、分层数据存储和可配置清洗规则。
 2. 生产级认证授权、审批、回滚和受控 Action。
 3. 面向规模化数据计算、完整指标体系和多租户的企业平台能力。
 
-## 9. 状态更新规则
+## 8. 状态更新规则
 
 - 本文档只记录可验证事实；页面存在、代码存在或单测通过不等同“浏览器验收通过”。
 - 每完成一个模块，更新其 PRD、原型、技术设计、开发和浏览器验收状态，并链接对应测试/截图/运行 ID。
