@@ -17,7 +17,6 @@ type AppShellProps = {
 };
 
 const navigation = [
-  { to: "/", label: "首页", icon: "ph-house" },
   { to: "/ontology", label: "本体管理", icon: "ph-share-network" },
   { to: "/data-pipeline", label: "数据管道", icon: "ph-database" },
   { to: "/apps/agent", label: "智能助手", icon: "ph-chats-circle" },
@@ -34,7 +33,7 @@ const roleLabels: Record<DemoRole, string> = {
 export function AppShell({ children, role, onRoleChange, ontologies, onCreated }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const section = navigation.find((item) => item.to === location.pathname || (item.to !== "/" && location.pathname.startsWith(item.to + "/")))?.label ?? "首页";
+  const section = navigation.find((item) => item.to === location.pathname || location.pathname.startsWith(item.to + "/"))?.label ?? "本体管理";
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeOntologyId, setActiveOntologyId] = useState<string | null>(null);
   const routeOntologyId = location.pathname.startsWith("/ontology/") ? location.pathname.split("/")[2] : null;
@@ -116,7 +115,6 @@ export function AppShell({ children, role, onRoleChange, ontologies, onCreated }
                 className={({ isActive }) => "oo-nav-item" + (isActive ? " is-active" : "")}
                 key={to}
                 to={to}
-                end={to === "/"}
               >
                 <i className={"ph " + icon} aria-hidden="true" />
                 <span>{label}</span>

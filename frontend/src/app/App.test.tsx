@@ -6,7 +6,7 @@ import App from "./App";
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("shows every MVP navigation destination when status API is unavailable", () => {
+it("shows every MVP navigation destination when status API is unavailable", async () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
   render(
     <MemoryRouter>
@@ -14,6 +14,8 @@ it("shows every MVP navigation destination when status API is unavailable", () =
     </MemoryRouter>,
   );
 
+  expect(await screen.findByRole("heading", { name: "本体管理" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "首页" })).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "数据管道" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "本体管理" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "智能助手" })).toBeInTheDocument();

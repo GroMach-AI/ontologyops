@@ -33,5 +33,5 @@ it("places ontology management before the renamed data-pipeline navigation item"
   const labels = within(screen.getByRole("navigation", { name: "主导航" }))
     .getAllByRole("link")
     .map((link) => link.textContent);
-  expect(labels).toEqual(["首页", "本体管理", "数据管道", "智能助手", "治理与可追溯", "模型管理"]);
+  expect(labels).toEqual(["本体管理", "数据管道", "智能助手", "治理与可追溯", "模型管理"]);
 });
