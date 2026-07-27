@@ -36,3 +36,15 @@ it("shows API-backed lineage and recent audit events", async () => {
   expect(await screen.findByText("ERP / purchase_orders.csv")).toBeInTheDocument();
   expect(screen.getByText("quality rule run")).toBeInTheDocument();
 });
+
+it("turns an API quality-rule type into a readable result label", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+    if (input.includes("quality/rules")) return { ok: true, json: async () => [{ id: "rule-1", name: "Dataset sales_orders unique check", dataset_name: "sales_orders", rule_type: "unique", field: "sales_order_no", latest_run: { status: "passed", pass_rate: 1, created_at: "2026-07-27T10:20:00", sample_rows: [] } }] };
+    if (input.includes("governance/audit")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => ({ nodes: [], edges: [] }) };
+  }));
+
+  render(<GovernancePage role="modeler" />);
+
+  expect(await screen.findByText("sales_order_no · 唯一性检查")).toBeInTheDocument();
+});

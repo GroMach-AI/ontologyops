@@ -81,7 +81,7 @@ function RulesView({ rules, canRun, onRun }: { rules: QualityRule[]; canRun: boo
     <div className="oo-governance-view-head"><div><h3>规则结果</h3><p>规则失败时，对应数据不会进入可信映射。</p></div></div>
     {rules.length === 0 ? <EmptyState text="暂无质量规则。数据管道运行后将在这里显示规则结果。" /> : <div className="oo-rule-list">
       {rules.map((rule) => <article className="oo-rule-row" key={rule.id}>
-        <div><strong>{rule.name}</strong><span>{rule.dataset_name} · <code>{rule.field}</code></span></div>
+        <div><strong>{formatRuleLabel(rule)}</strong><span>{rule.dataset_name} · <code>{rule.field}</code></span></div>
         <StatusBadge status={rule.latest_run?.status ?? "未运行"} />
         <span className="oo-rule-exception">{rule.latest_run?.sample_rows?.length ? `${rule.latest_run.sample_rows.length} 条异常` : "—"}</span>
         <button aria-label={`运行${rule.name}`} className="secondary-button" disabled={!canRun} type="button" onClick={() => void onRun(rule)}>运行</button>
@@ -114,6 +114,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function EmptyState({ text }: { text: string }) { return <p className="oo-governance-empty">{text}</p>; }
+
+function formatRuleLabel(rule: QualityRule) {
+  const ruleTypes: Record<string, string> = { unique: "唯一性检查", not_null: "完整性检查", non_negative: "非负值检查", timely: "及时性检查", cross_field_equal: "一致性检查" };
+  return `${rule.field} · ${ruleTypes[rule.rule_type] ?? rule.name}`;
+}
 
 function formatEvent(value: string) { return value.replaceAll("_", " "); }
 function formatTime(value: string) { return new Date(value).toLocaleString("zh-CN", { hour12: false }); }

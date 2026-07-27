@@ -28,7 +28,7 @@
 - Consumes: `GovernancePage({ role: DemoRole })`。
 - Produces: 页签“规则结果”“数据血缘”“可追溯性”，以及真实 API 请求的可观察渲染。
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 it("renders the three evidence views and no rule-creation action", async () => {
@@ -40,23 +40,23 @@ it("renders the three evidence views and no rule-creation action", async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- GovernancePage.test.tsx`
 
 Expected: FAIL because the page currently has no evidence-view tabs and still exposes `新建质量规则`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Replace the current metric grid, permission preview and creation form with a tab state defaulting to `rules`. Render three labelled tab buttons and the matching content panel. Keep the refresh handler and existing `runRule` function.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- GovernancePage.test.tsx`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/features/governance/GovernancePage.tsx frontend/src/features/governance/GovernancePage.test.tsx
@@ -73,7 +73,7 @@ git commit -m "精简治理与可追溯页面"
 - Consumes: `GET /api/governance/quality/rules`、`GET /api/governance/audit`、`GET /api/governance/lineage/metric/supplier_on_time_delivery_rate`。
 - Produces: 规则行、线性血缘链、最近事件时间线和空态。
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 it("shows API-backed lineage and recent audit events", async () => {
@@ -84,23 +84,23 @@ it("shows API-backed lineage and recent audit events", async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- GovernancePage.test.tsx`
 
 Expected: FAIL because the existing page has no tabbed lineage panel or side audit rail.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Render source API labels in the lineage chain, map audit entries to a right-side timeline, and show explicit empty-state text if rules, lineage nodes or audit events are unavailable. Do not insert fallback business records.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- GovernancePage.test.tsx`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/features/governance/GovernancePage.tsx frontend/src/features/governance/GovernancePage.test.tsx
@@ -117,32 +117,32 @@ git commit -m "展示治理证据与审计事件"
 - Consumes: 任务 1 和任务 2 的语义 className。
 - Produces: 自适应两栏治理页，窄屏下审计栏置于主内容下方。
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
-it("keeps rule execution available only for a role allowed to configure", async () => {
-  render(<GovernancePage role="operator" />);
-  expect(await screen.findByRole("button", { name: "运行供应商编码完整性" })).toBeDisabled();
+it("turns an API quality-rule type into a readable result label", async () => {
+  render(<GovernancePage role="modeler" />);
+  expect(await screen.findByText("sales_order_no · 唯一性检查")).toBeInTheDocument();
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- GovernancePage.test.tsx`
 
-Expected: FAIL because the simplified rule action has not yet exposed an accessible per-rule label.
+Expected: FAIL because the rule row still displays the backend rule name verbatim.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
-Add concise styles for `.oo-governance-layout`, `.oo-governance-tabs`, `.oo-rule-list`, `.oo-lineage-chain` and `.oo-audit-rail`. Use existing design tokens, retain keyboard-visible tabs, and give each `运行` button an accessible label containing the rule name.
+Add concise styles for `.oo-governance-layout`, `.oo-governance-tabs`, `.oo-rule-list`, `.oo-lineage-chain` and `.oo-audit-rail`. Use existing design tokens, retain keyboard-visible tabs, map rule types to readable Chinese labels, and give each `运行` button an accessible label containing the rule name.
 
-- [ ] **Step 4: Run tests, lint and build**
+- [x] **Step 4: Run tests, lint and build**
 
 Run: `npm test -- --run && npm run lint && npm run build`
 
 Expected: all frontend tests pass, TypeScript emits no errors, and Vite build exits 0.
 
-- [ ] **Step 5: Browser verify and commit**
+- [x] **Step 5: Browser verify and commit**
 
 Open `http://127.0.0.1:5175/governance`, verify all three tabs and the audit rail at desktop width, then:
 
