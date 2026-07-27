@@ -2,47 +2,122 @@ import { useEffect, useState } from "react";
 
 import type { DemoRole } from "../../components/AppShell";
 
-type QualityRule = { id: string; name: string; dataset_name: string; rule_type: string; field: string; latest_run: { status: string; pass_rate: number; created_at: string; sample_rows?: Array<Record<string, unknown>> } | null };
+type QualityRule = {
+  id: string;
+  name: string;
+  dataset_name: string;
+  rule_type: string;
+  field: string;
+  latest_run: { status: string; pass_rate: number; created_at: string; sample_rows?: Array<Record<string, unknown>> } | null;
+};
+
 type Audit = { id: string; created_at: string; actor: string; event_type: string; resource_type: string };
 type Lineage = { nodes: Array<{ id: string; label: string }>; edges: Array<{ from: string; to: string }> };
+type GovernanceView = "rules" | "lineage" | "trace";
 
 export function GovernancePage({ role }: { role: DemoRole }) {
   const [rules, setRules] = useState<QualityRule[]>([]);
   const [audit, setAudit] = useState<Audit[]>([]);
-  const [policy, setPolicy] = useState<{ hidden_fields: string[] }>({ hidden_fields: [] });
   const [lineage, setLineage] = useState<Lineage | null>(null);
   const [notice, setNotice] = useState("正在加载治理资源...");
-  const [showCreate, setShowCreate] = useState(false);
-  const [newRule, setNewRule] = useState({ name: "", dataset_name: "purchase_orders", rule_type: "not_null", field: "" });
-  const canEdit = role === "admin" || role === "modeler";
+  const [activeView, setActiveView] = useState<GovernanceView>("rules");
+  const canRun = role === "admin" || role === "modeler";
 
   async function loadGovernance() {
-    const [rulesResponse, auditResponse, policyResponse, lineageResponse] = await Promise.all([
-      fetch("/api/governance/quality/rules"), fetch("/api/governance/audit"), fetch(`/api/governance/permissions/preview?role=${role}`), fetch("/api/governance/lineage/metric/supplier_on_time_delivery_rate"),
+    const [rulesResponse, auditResponse, lineageResponse] = await Promise.all([
+      fetch("/api/governance/quality/rules"),
+      fetch("/api/governance/audit"),
+      fetch("/api/governance/lineage/metric/supplier_on_time_delivery_rate"),
     ]);
     if (rulesResponse.ok) setRules(await rulesResponse.json());
     if (auditResponse.ok) setAudit(await auditResponse.json());
-    if (policyResponse.ok) setPolicy(await policyResponse.json());
     if (lineageResponse.ok) setLineage(await lineageResponse.json());
-    setNotice("质量、血缘、权限和审计均从本地服务实时读取。");
+    setNotice("展示规则结果、资源血缘与最近审计事件。");
   }
-  useEffect(() => { void loadGovernance(); }, [role]);
+
+  useEffect(() => { void loadGovernance(); }, []);
 
   async function runRule(rule: QualityRule) {
     setNotice(`正在运行 ${rule.name}...`);
-    const response = await fetch(`/api/governance/quality/rules/${rule.id}/run`, { method: "POST", headers: { "X-Demo-Role": role } });
-    if (response.ok) { setNotice(`${rule.name} 已完成运行并写入审计。`); await loadGovernance(); }
-    else setNotice("质量规则运行失败，请确认 Demo 数据已初始化。");
+    const response = await fetch(`/api/governance/quality/rules/${rule.id}/run`, {
+      method: "POST",
+      headers: { "X-Demo-Role": role },
+    });
+    if (response.ok) {
+      setNotice(`${rule.name} 已完成运行，结果已写入最近事件。`);
+      await loadGovernance();
+      return;
+    }
+    setNotice("质量规则运行失败，请确认 Demo 数据已初始化。");
   }
 
-  async function createRule() {
-    const response = await fetch("/api/governance/quality/rules", { method: "POST", headers: { "Content-Type": "application/json", "X-Demo-Role": role }, body: JSON.stringify(newRule) });
-    if (response.ok) { setNotice("质量规则已创建。可立即运行并查看异常样本。"); setShowCreate(false); setNewRule({ name: "", dataset_name: "purchase_orders", rule_type: "not_null", field: "" }); await loadGovernance(); }
-    else setNotice((await response.json()).detail ?? "创建规则失败。");
-  }
-
-  return <div className="stack-lg"><div className="section-heading"><div><p className="eyebrow">质量、血缘、权限与审计</p><h2>治理中心</h2></div><div className="button-row compact"><button className="secondary-button" onClick={() => void loadGovernance()}>刷新数据</button><button className="primary-button" disabled={!canEdit} onClick={() => setShowCreate((value) => !value)}>新建质量规则</button></div></div><p className="inline-notice">{notice}</p>{showCreate && <div className="panel"><p className="eyebrow">质量规则配置</p><h3>新建规则</h3><div className="form-grid"><Field label="规则名称" value={newRule.name} onChange={(name) => setNewRule({ ...newRule, name })} /><Field label="数据集" value={newRule.dataset_name} onChange={(dataset_name) => setNewRule({ ...newRule, dataset_name })} /><label className="form-field"><span>规则类型</span><select value={newRule.rule_type} onChange={(event) => setNewRule({ ...newRule, rule_type: event.target.value })}><option value="not_null">完整性</option><option value="unique">唯一性</option><option value="non_negative">值域</option><option value="timely">及时性</option><option value="cross_field_equal">跨字段一致性</option></select></label><Field label="目标字段" value={newRule.field} onChange={(field) => setNewRule({ ...newRule, field })} /></div><div className="button-row"><button className="primary-button" onClick={() => void createRule()}>保存规则</button></div></div>}<div className="metric-grid">{rules.slice(0, 3).map((rule) => <Metric key={rule.id} title={rule.name} value={rule.latest_run ? `${Math.round(rule.latest_run.pass_rate * 100)}%` : "未运行"} detail={`${rule.dataset_name}.${rule.field}`} />)}</div><div className="two-column"><div className="panel"><p className="eyebrow">端到端血缘</p><h3>供应商准时交付率</h3><div className="lineage">{lineage?.nodes.map((node, index) => <span key={node.id}>{index ? <i>→</i> : null}{node.label}</span>) ?? <span>正在加载血缘...</span>}</div></div><div className="panel"><p className="eyebrow">权限预览</p><h3>{role === "operator" ? "业务运营者" : role === "admin" ? "管理员" : "本体建模者"}</h3><ul className="policy-list"><li><span>供应商名称</span><b className="visible">可见</b></li><li><span>供应商风险等级</span><b className="visible">可见</b></li><li><span>合同单价</span><b className={policy.hidden_fields.includes("contract_unit_price") ? "hidden" : "visible"}>{policy.hidden_fields.includes("contract_unit_price") ? "隐藏" : "可见"}</b></li></ul></div></div><div className="panel"><p className="eyebrow">质量规则</p><h3>规则运行与结果</h3><table><thead><tr><th>规则</th><th>数据集</th><th>最近状态</th><th>异常样本</th><th>操作</th></tr></thead><tbody>{rules.map((rule) => <tr key={rule.id}><td>{rule.name}</td><td className="mono">{rule.dataset_name}.{rule.field}</td><td><span className={rule.latest_run?.status === "passed" ? "badge success" : "badge neutral"}>{rule.latest_run?.status ?? "未运行"}</span></td><td>{rule.latest_run?.sample_rows?.length ? `${rule.latest_run.sample_rows.length} 条` : "-"}</td><td><button className="secondary-button" disabled={!canEdit} onClick={() => void runRule(rule)}>运行</button></td></tr>)}</tbody></table></div><div className="panel"><p className="eyebrow">审计流水</p><h3>最近事件</h3><table><thead><tr><th>时间</th><th>操作人</th><th>事件</th><th>资源</th></tr></thead><tbody>{audit.length ? audit.slice(0, 12).map((event) => <tr key={event.id}><td>{new Date(event.created_at).toLocaleString("zh-CN", { hour12: false })}</td><td>{event.actor}</td><td>{event.event_type}</td><td>{event.resource_type}</td></tr>) : <tr><td colSpan={4}>暂无审计事件</td></tr>}</tbody></table></div></div>;
+  return <div className="oo-governance-page">
+    <header className="oo-governance-heading">
+      <p>{notice}</p>
+    </header>
+    <div className="oo-governance-layout">
+      <section className="oo-governance-main" aria-label="治理证据">
+        <div className="oo-governance-tabs" role="tablist" aria-label="治理视图">
+          <ViewTab active={activeView === "rules"} id="rules" label="规则结果" onSelect={setActiveView} />
+          <ViewTab active={activeView === "lineage"} id="lineage" label="数据血缘" onSelect={setActiveView} />
+          <ViewTab active={activeView === "trace"} id="trace" label="可追溯性" onSelect={setActiveView} />
+        </div>
+        {activeView === "rules" ? <RulesView rules={rules} canRun={canRun} onRun={runRule} /> : null}
+        {activeView === "lineage" ? <LineageView lineage={lineage} /> : null}
+        {activeView === "trace" ? <TraceView audit={audit} /> : null}
+      </section>
+      <AuditRail audit={audit} />
+    </div>
+  </div>;
 }
 
-function Metric({ title, value, detail }: { title: string; value: string; detail: string }) { return <div className="metric-card neutral"><span>{title}</span><strong>{value}</strong><small>{detail}</small></div>; }
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="form-field"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>; }
+function ViewTab({ active, id, label, onSelect }: { active: boolean; id: GovernanceView; label: string; onSelect: (view: GovernanceView) => void }) {
+  return <button aria-selected={active} className={active ? "is-active" : ""} role="tab" type="button" onClick={() => onSelect(id)}>{label}</button>;
+}
+
+function RulesView({ rules, canRun, onRun }: { rules: QualityRule[]; canRun: boolean; onRun: (rule: QualityRule) => Promise<void> }) {
+  return <section className="oo-governance-view" role="tabpanel" aria-label="规则结果">
+    <div className="oo-governance-view-head"><div><h3>规则结果</h3><p>规则失败时，对应数据不会进入可信映射。</p></div></div>
+    {rules.length === 0 ? <EmptyState text="暂无质量规则。数据管道运行后将在这里显示规则结果。" /> : <div className="oo-rule-list">
+      {rules.map((rule) => <article className="oo-rule-row" key={rule.id}>
+        <div><strong>{formatRuleLabel(rule)}</strong><span>{rule.dataset_name} · <code>{rule.field}</code></span></div>
+        <StatusBadge status={rule.latest_run?.status ?? "未运行"} />
+        <span className="oo-rule-exception">{rule.latest_run?.sample_rows?.length ? `${rule.latest_run.sample_rows.length} 条异常` : "—"}</span>
+        <button aria-label={`运行${rule.name}`} className="secondary-button" disabled={!canRun} type="button" onClick={() => void onRun(rule)}>运行</button>
+      </article>)}
+    </div>}
+  </section>;
+}
+
+function LineageView({ lineage }: { lineage: Lineage | null }) {
+  return <section className="oo-governance-view" role="tabpanel" aria-label="数据血缘">
+    <div className="oo-governance-view-head"><div><h3>数据血缘</h3><p>从来源数据到本体指标，再到智能助手可引用的资源链。</p></div></div>
+    {lineage?.nodes.length ? <ol className="oo-lineage-chain">{lineage.nodes.map((node, index) => <li key={node.id}><span>{index + 1}</span><div><strong>{index === 0 ? "来源文件" : node.label}</strong><small>{node.label}</small></div></li>)}</ol> : <EmptyState text="尚无可展示的资源血缘。请先运行数据管道并完成本体映射。" />}
+  </section>;
+}
+
+function TraceView({ audit }: { audit: Audit[] }) {
+  return <section className="oo-governance-view" role="tabpanel" aria-label="可追溯性">
+    <div className="oo-governance-view-head"><div><h3>可追溯性</h3><p>记录对资源的操作，让数据结论可以回看操作人、时间和资源类型。</p></div></div>
+    {audit.length ? <ol className="oo-trace-list">{audit.slice(0, 6).map((event) => <li key={event.id}><strong>{formatEvent(event.event_type)}</strong><span>{event.actor} · {event.resource_type} · {formatTime(event.created_at)}</span></li>)}</ol> : <EmptyState text="暂无可追溯事件。运行管道、发布本体或进行智能问数后会在这里记录。" />}
+  </section>;
+}
+
+function AuditRail({ audit }: { audit: Audit[] }) {
+  return <aside className="oo-audit-rail" aria-label="最近事件"><div><h3>最近事件</h3><p>影响数据、本体和智能助手回答的操作记录。</p></div>{audit.length ? <ol>{audit.slice(0, 6).map((event) => <li key={event.id}><strong>{formatEvent(event.event_type)}</strong><span>{event.resource_type} · {formatTime(event.created_at)}</span></li>)}</ol> : <EmptyState text="暂无审计事件。" />}</aside>;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const normalized = status === "passed" ? "通过" : status === "failed" ? "需处理" : status;
+  return <span className={`oo-governance-status is-${status === "passed" ? "success" : status === "failed" ? "warning" : "neutral"}`}>{normalized}</span>;
+}
+
+function EmptyState({ text }: { text: string }) { return <p className="oo-governance-empty">{text}</p>; }
+
+function formatRuleLabel(rule: QualityRule) {
+  const ruleTypes: Record<string, string> = { unique: "唯一性检查", not_null: "完整性检查", non_negative: "非负值检查", timely: "及时性检查", cross_field_equal: "一致性检查" };
+  return `${rule.field} · ${ruleTypes[rule.rule_type] ?? rule.name}`;
+}
+
+function formatEvent(value: string) { return value.replaceAll("_", " "); }
+function formatTime(value: string) { return new Date(value).toLocaleString("zh-CN", { hour12: false }); }

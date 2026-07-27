@@ -1,74 +1,884 @@
-import { Download, RotateCcw, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
+import { useLocation, useNavigate } from "react-router-dom";
 import type { DemoRole } from "../../components/AppShell";
 
-type OntologyDefinition = {
-  objects: Array<{ id: string; label: string; key: string; attributes?: Array<{ id: string; label: string; type: string }> }>;
-  links: Array<{ name: string; from: string; to: string; cardinality?: string }>;
-  mappings: Array<{ object: string; dataset: string; key: string }>;
-  metrics: Array<{ id: string; label: string; definition: string }>;
-  functions: Array<{ id: string; label: string; definition: string }>;
-  rules: Array<{ id: string; label: string; definition: string }>;
+export type OntologyProperty = {
+  name: string; type: string; is_key: boolean; description: string;
 };
-type Version = { id: string; status: string; semantic_version: string; published_at: string | null; definition: OntologyDefinition };
-type Impact = { base_version: string | null; affected: Record<string, { added: string[]; removed: string[]; changed: string[] }>; downstream: { agent_tools: string[]; pages: string[] } };
 
-export function OntologyPage({ role }: { role: DemoRole }) {
-  const [definition, setDefinition] = useState<OntologyDefinition | null>(null);
-  const [editor, setEditor] = useState("");
-  const [versions, setVersions] = useState<Version[]>([]);
-  const [impact, setImpact] = useState<Impact | null>(null);
-  const [notice, setNotice] = useState("正在载入本体草稿与版本历史...");
-  const importRef = useRef<HTMLInputElement>(null);
+export type OntologyEntity = {
+  name: string; label: string; description: string; source_file: string;
+  properties: OntologyProperty[];
+};
+
+export type OntologyRelationship = {
+  name: string; from_entity: string; to_entity: string; type: string;
+  description: string; based_on: string;
+};
+
+export type Ontology = {
+  id: string; name: string; scope: string;
+  status: "draft" | "published"; version: string;
+  draftId?: string; releaseId?: string;
+  objects: number; links: number; rules: number; updated: string;
+  entities: OntologyEntity[];
+  relationships: OntologyRelationship[];
+};
+
+type ColumnProfile = {
+  name: string; inferred_type: string; total_rows: number;
+  unique_count: number; null_percent: number; sample_values: string[];
+};
+type FileProfile = {
+  source: string; type: string; total_rows?: number;
+  columns?: ColumnProfile[]; note?: string;
+};
+type DetectedLink = {
+  type: string; confidence: string; source_file: string;
+  source_column: string; target_file: string; target_column: string; message: string;
+};
+type QAQuestion = {
+  id: string; category: string; question: string; suggested: string[];
+  recommended?: string; recommendation_reason?: string;
+};
+type ProfilingResult = {
+  profiling: { files_parsed: number; columns_total: number; details: FileProfile[] };
+  links_detected: DetectedLink[];
+  qa_questions: QAQuestion[];
+};
+
+type LLMAnalysis = {
+  entities: OntologyEntity[];
+  relationships: OntologyRelationship[];
+  questions: QAQuestion[];
+  summary: string;
+};
+
+type JsonRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): JsonRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+export function normalizeLLMAnalysis(value: unknown, fallback?: LLMAnalysis): LLMAnalysis {
+  const root = asRecord(value);
+  const rawEntities = Array.isArray(root.entities) ? root.entities : [];
+  const rawRelationships = Array.isArray(root.relationships) ? root.relationships : [];
+  const rawQuestions = Array.isArray(root.questions) ? root.questions : [];
+
+  const entities = rawEntities.map((item, entityIndex) => {
+    const entity = asRecord(item);
+    const rawProperties = Array.isArray(entity.properties) ? entity.properties : [];
+    return {
+      name: asString(entity.name, `Entity${entityIndex + 1}`),
+      label: asString(entity.label, asString(entity.name, `实体 ${entityIndex + 1}`)),
+      description: asString(entity.description),
+      source_file: asString(entity.source_file),
+      properties: rawProperties.map((item, propertyIndex) => {
+        const property = asRecord(item);
+        return {
+          name: asString(property.name, `property_${propertyIndex + 1}`),
+          type: asString(property.type, "string"),
+          is_key: property.is_key === true,
+          description: asString(property.description),
+        };
+      }),
+    };
+  });
+
+  const relationships = rawRelationships.map((item, relationshipIndex) => {
+    const relationship = asRecord(item);
+    const rawType = asString(relationship.type, "many_to_one");
+    const validType = ["one_to_one", "one_to_many", "many_to_one", "many_to_many"].includes(rawType)
+      ? rawType : "many_to_one";
+    return {
+      name: asString(relationship.name, `关系 ${relationshipIndex + 1}`),
+      from_entity: asString(relationship.from_entity),
+      to_entity: asString(relationship.to_entity),
+      type: validType,
+      description: asString(relationship.description),
+      based_on: asString(relationship.based_on),
+    };
+  });
+
+  const questions = rawQuestions.map((item, questionIndex) => {
+    const question = asRecord(item);
+    const suggested = Array.isArray(question.suggested)
+      ? question.suggested.filter((option): option is string => typeof option === "string")
+      : [];
+    const requestedRecommendation = asString(question.recommended);
+    return {
+      id: asString(question.id, `llm-q-${questionIndex + 1}`),
+      category: asString(question.category, "confirm"),
+      question: asString(question.question, `请确认候选项 ${questionIndex + 1}`),
+      suggested,
+      recommended: suggested.includes(requestedRecommendation) ? requestedRecommendation : (suggested[0] ?? ""),
+      recommendation_reason: asString(question.recommendation_reason),
+    };
+  });
+
+  return {
+    entities: entities.length > 0 ? entities : fallback?.entities ?? [],
+    relationships: relationships.length > 0 ? relationships : fallback?.relationships ?? [],
+    questions,
+    summary: asString(root.summary, fallback?.summary ?? ""),
+  };
+}
+
+export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; ontologies: Ontology[]; onCreated?: (onto: Ontology) => void }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [showCreate, setShowCreate] = useState(false);
+  const [createStep, setCreateStep] = useState<"form" | "llm" | "review">("form");
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState("");
   const editable = role === "admin" || role === "modeler";
 
-  function headers() { return { "Content-Type": "application/json", "X-Demo-Role": role }; }
-  function assignDefinition(next: OntologyDefinition) { setDefinition(next); setEditor(JSON.stringify(next, null, 2)); }
-  async function loadState() {
-    const [draftResponse, versionResponse] = await Promise.all([fetch("/api/ontology/draft"), fetch("/api/ontology/versions")]);
-    if (draftResponse.ok) assignDefinition((await draftResponse.json()).definition);
-    else await loadCandidate();
-    if (versionResponse.ok) setVersions((await versionResponse.json()).versions);
-    const impactResponse = await fetch("/api/ontology/draft/impact");
-    if (impactResponse.ok) setImpact(await impactResponse.json()); else setImpact(null);
-    setNotice("对象、属性、Link、字段映射、指标、函数和规则都保存在本体草稿中。");
-  }
-  async function loadCandidate() {
-    const response = await fetch("/api/ontology/candidates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ datasets: ["purchase_orders", "inventory", "suppliers"] }) });
-    if (!response.ok) { setNotice("候选建议加载失败，请确认后端已启动。"); return; }
-    assignDefinition((await response.json()).definition);
-    setNotice("当前为明确标记的 Mock 候选；请审核后保存草稿。");
-  }
-  useEffect(() => { void loadState(); }, []);
-  function applyEditor() {
-    try { assignDefinition(JSON.parse(editor) as OntologyDefinition); setNotice("草稿编辑内容已解析，保存后才会写入平台元数据。"); }
-    catch { setNotice("JSON 格式无效，未应用修改。"); }
-  }
-  async function saveDraft() {
-    if (!definition) return;
-    const response = await fetch("/api/ontology/draft", { method: "PATCH", headers: headers(), body: JSON.stringify({ definition }) });
-    if (response.ok) { setNotice("草稿已保存。已发布版本不会被改写。"); const impactResponse = await fetch("/api/ontology/draft/impact"); if (impactResponse.ok) setImpact(await impactResponse.json()); }
-    else setNotice((await response.json()).detail ?? "保存失败：当前角色没有编辑权限。");
-  }
-  async function publishDraft() {
-    await saveDraft();
-    const response = await fetch("/api/ontology/publish", { method: "POST", headers: { "X-Demo-Role": role } });
-    if (response.ok) { setNotice(`发布成功：${(await response.json()).semantic_version}，Agent 将使用该版本。`); await loadState(); }
-    else setNotice((await response.json()).detail ?? "发布失败。");
-  }
-  async function rollback(version: Version) {
-    const response = await fetch(`/api/ontology/versions/${version.id}/rollback`, { method: "POST", headers: { "X-Demo-Role": role } });
-    if (response.ok) { assignDefinition((await response.json()).definition); setNotice(`${version.semantic_version} 已恢复为可编辑草稿。`); }
-    else setNotice((await response.json()).detail ?? "回滚失败。");
-  }
-  function exportDefinition() {
-    if (!definition) return;
-    const blob = new Blob([JSON.stringify(definition, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "ontology-draft.json"; anchor.click(); URL.revokeObjectURL(url);
-  }
-  async function importDefinition(file: File) { try { assignDefinition(JSON.parse(await file.text()) as OntologyDefinition); setNotice("已导入 JSON 草稿，请审核并保存。 "); } catch { setNotice("导入失败：需要有效的本体 JSON 文件。"); } }
+  const [formName, setFormName] = useState("");
+  const [formScope, setFormScope] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [profiling, setProfiling] = useState<ProfilingResult | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [llm, setLlm] = useState<LLMAnalysis | null>(null);
+  const [qIndex, setQIndex] = useState(0);
+  const [qAnswers, setQAnswers] = useState<Record<string, string>>({});
+  const [customDraft, setCustomDraft] = useState("");
+  const [refining, setRefining] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const llmRawText = useRef("");
 
-  const changedCount = impact ? Object.values(impact.affected).reduce((total, value) => total + value.added.length + value.removed.length + value.changed.length, 0) : 0;
-  return <div className="stack-lg"><div className="section-heading"><div><p className="eyebrow">草稿与不可变发布历史</p><h2>工厂供应链本体</h2></div><div className="button-row compact"><input ref={importRef} className="visually-hidden" type="file" accept=".json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importDefinition(file); }} /><button className="secondary-button" onClick={() => importRef.current?.click()} disabled={!editable}><Upload size={15} />导入</button><button className="secondary-button" onClick={exportDefinition} disabled={!definition}><Download size={15} />导出</button><button className="secondary-button" onClick={() => void saveDraft()} disabled={!definition || !editable}>保存草稿</button><button className="primary-button" onClick={() => void publishDraft()} disabled={!definition || !editable}>发布版本</button></div></div><p className="inline-notice">{notice}</p><div className="ontology-layout"><div className="panel ontology-graph"><p className="eyebrow">对象与关系</p><h3>业务语义图</h3><div className="object-grid">{definition?.objects.map((object, index) => <div className="object-card" key={object.id}><span>O{index + 1}</span><strong>{object.label}</strong><small>{object.attributes?.length ?? 0} 个属性 · {object.key}</small></div>)}</div></div><aside className="panel candidate-panel"><p className="eyebrow">资源摘要</p><h3>当前草稿</h3><ul className="policy-list"><li><span>对象</span><b>{definition?.objects.length ?? 0}</b></li><li><span>Link</span><b>{definition?.links.length ?? 0}</b></li><li><span>指标 / 函数 / 规则</span><b>{`${definition?.metrics.length ?? 0} / ${definition?.functions.length ?? 0} / ${definition?.rules.length ?? 0}`}</b></li></ul><div className="button-row"><button className="secondary-button" onClick={() => void loadCandidate()} disabled={!editable}>生成候选</button></div></aside></div><div className="two-column ontology-editor-layout"><div className="panel"><div className="tabs"><button className="active">资源编辑器</button><button>对象</button><button>属性</button><button>Link</button><button>映射</button><button>指标</button><button>函数</button></div><p className="muted">通过 JSON 资源编辑器统一编辑所有本体资源；保存前可反复调整，发布后形成不可变快照。</p><textarea aria-label="本体资源编辑器" className="ontology-editor" value={editor} onChange={(event) => setEditor(event.target.value)} disabled={!editable} /><div className="button-row"><button className="secondary-button" onClick={applyEditor} disabled={!editable}>应用编辑</button></div></div><div className="stack-lg"><div className="panel"><p className="eyebrow">发布前影响检查</p><h3>{impact?.base_version ? `相对 ${impact.base_version} 的变更` : "首次发布"}</h3><p className="muted">{changedCount ? `${changedCount} 项资源变化将影响智能问数和治理中心。` : "草稿与已发布版本一致，或尚未形成基线。"}</p><div className="chip-list">{impact && Object.entries(impact.affected).flatMap(([kind, value]) => [...value.added.map((name) => `${kind}: +${name}`), ...value.changed.map((name) => `${kind}: ~${name}`), ...value.removed.map((name) => `${kind}: -${name}`)]).slice(0, 10).map((label) => <span className="chip" key={label}>{label}</span>)}</div></div><div className="panel"><p className="eyebrow">版本历史</p><h3>已发布快照</h3><div className="version-list">{versions.filter((version) => version.status !== "draft").map((version) => <div className="version-row" key={version.id}><div><strong>{version.semantic_version}</strong><small>{version.status} · {version.published_at ? new Date(version.published_at).toLocaleString("zh-CN", { hour12: false }) : "-"}</small></div><button className="secondary-button" onClick={() => void rollback(version)} disabled={!editable}><RotateCcw size={14} />回滚为草稿</button></div>)}{!versions.some((version) => version.status !== "draft") && <p className="muted">尚无已发布版本。</p>}</div></div></div></div></div>;
+  function openCreate() {
+    setFormName(""); setFormScope(""); setFiles([]);
+    setProfiling(null); setLlm(null); setQAnswers({}); setQIndex(0);
+    setCreateStep("form"); setShowCreate(true);
+  }
+  function closeCreate() {
+    setShowCreate(false);
+    // reset dialog state so a fresh open starts clean
+    setCreateStep("form");
+    setFormName("");
+    setFormScope("");
+    setFiles([]);
+    setProfiling(null);
+    setLlm(null);
+    setQIndex(0);
+    setQAnswers({});
+    setCustomDraft("");
+    setEditing(false);
+    setRefining(false);
+  }
+
+  useEffect(() => {
+    if (!editable || !new URLSearchParams(location.search).has("create")) return;
+    openCreate();
+    navigate("/ontology", { replace: true });
+  }, [editable, location.search, navigate]);
+
+  async function runProfiling() {
+    const name = formName.trim();
+    const scope = formScope.trim();
+    if (!name || !scope) {
+      setNotice("请先填写本体名称与企业建模目标。");
+      return;
+    }
+    if (files.length === 0) {
+      setNotice("请先上传至少一个业务资料（CSV / Excel / PDF / Word）。");
+      return;
+    }
+    setCreating(true);
+    const form = new FormData();
+    form.append("name", name);
+    form.append("scope", scope);
+    for (const f of files) form.append("files", f);
+    try {
+      const res = await fetch("/api/ontology-drafts/upload", { method: "POST", body: form });
+      if (!res.ok) throw new Error((await res.json()).detail ?? "分析失败");
+      const data = await res.json() as ProfilingResult;
+      setProfiling(data);
+      setCreateStep("llm");
+    } catch (e) {
+      setNotice("数据解析失败：" + (e instanceof Error ? e.message : "请检查文件格式。"));
+      setCreateStep("form");  // make sure dialog form remains reachable
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function runLLMAnalysis() {
+    if (!profiling) return;
+    setAnalyzing(true);
+    try {
+      const res = await fetch("/api/ontology-drafts/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draft: { name: formName, scope: formScope },
+          profiling: profiling.profiling,
+          links_detected: profiling.links_detected,
+        }),
+      });
+      const data = await res.json();
+      const text: string = data.analysis ?? "";
+      llmRawText.current = text;
+      let parsed: LLMAnalysis | null = null;
+      try {
+        const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").replace(/,(\s*[}\]])/g, "$1").trim();
+        const jsonStart = cleaned.indexOf("{");
+        const jsonEnd = cleaned.lastIndexOf("}");
+        if (jsonStart >= 0 && jsonEnd > jsonStart) {
+          parsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as LLMAnalysis;
+        }
+      } catch {}
+      if (parsed) {
+        parsed = normalizeLLMAnalysis(parsed);
+        if (parsed.questions.length === 0 && parsed.relationships.length > 0) {
+          parsed.questions = parsed.relationships.slice(0, 3).map((r, i) => ({
+            id: `auto-q-${i}`,
+            category: "relationship",
+            question: `检测到潜在关系：「${r.name}」（${r.from_entity} → ${r.to_entity}）。是否确认？`,
+            suggested: ["确认", "调整", "跳过"],
+            recommended: "确认",
+            recommendation_reason: "该关系来自已检测到的字段关联，需由建模者确认业务语义。",
+          }));
+        }
+        if (parsed.questions.length === 0) {
+          parsed.questions = [
+            {
+              id: "auto-q-fallback",
+              category: "confirm",
+              question: "基于以上分析，是否确认将生成的对象和关系加入草稿？",
+              suggested: ["确认全部", "稍后审核"],
+              recommended: "确认全部",
+              recommendation_reason: "当前没有仍待澄清的结构性问题。",
+            },
+          ];
+        }
+        setLlm(parsed);
+      } else {
+        setLlm({
+          entities: [],
+          relationships: [],
+          questions: [
+            {
+              id: "parse-fail",
+              category: "error",
+              question: "LLM 返回无法解析为结构化 JSON，请查看下方原始输出。是否继续？",
+              suggested: ["继续", "重试"],
+              recommended: "重试",
+              recommendation_reason: "重新获取结构化结果比在不完整候选上继续更可靠。",
+            },
+          ],
+          summary: text,
+        });
+      }
+      setQIndex(0);
+      setQAnswers({});
+      setCreateStep("llm");
+    } catch (e) {
+      setNotice("LLM 分析请求失败：" + (e instanceof Error ? e.message : "请检查 API Key 配置。"));
+      setCreateStep("form");  // let the user re-upload or retry instead of stuck dialog
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  function answerQuestion(qid: string, answer: string) {
+    if (qid === "parse-fail") {
+      if (answer === "重试") runLLMAnalysis();
+      else { setCreateStep("review"); }
+      return;
+    }
+    setQAnswers((prev) => ({ ...prev, [qid]: answer }));
+  }
+  async function nextQuestion() {
+    if (!llm) return;
+
+    const currentQuestion = llm.questions[qIndex];
+    if (!currentQuestion) {
+      setCreateStep("review");
+      return;
+    }
+
+    const updatedAnswers = { ...qAnswers };
+    if (updatedAnswers[currentQuestion.id] === "") {
+      updatedAnswers[currentQuestion.id] = customDraft.trim() || "(未填写)";
+      setQAnswers(updatedAnswers);
+      setCustomDraft("");
+    }
+
+    if (qIndex < llm.questions.length - 1) {
+      setQIndex((index) => index + 1);
+      return;
+    }
+
+    setRefining(true);
+    try {
+      const res = await fetch("/api/ontology-drafts/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysis: llmRawText.current || JSON.stringify(llm),
+          answers: updatedAnswers,
+          questions: llm.questions,
+          draft: { name: formName, scope: formScope },
+        }),
+      });
+      if (!res.ok) throw new Error("候选优化请求失败");
+
+      const data = await res.json();
+      const text = typeof data.analysis === "string" ? data.analysis : "";
+      const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").replace(/,(\s*[}\]])/g, "$1").trim();
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start < 0 || end <= start) throw new Error("候选优化结果不是有效 JSON");
+
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      setLlm({ ...normalizeLLMAnalysis(parsed, llm), questions: [] });
+      llmRawText.current = text;
+    } catch (error) {
+      setLlm({ ...normalizeLLMAnalysis(llm), questions: [] });
+      setNotice(`候选优化未完成，已保留初始推荐：${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setRefining(false);
+      setCreateStep("review");
+    }
+  }
+  function prevQuestion() {
+    if (qIndex > 0) setQIndex(qIndex - 1);
+  }
+
+  async function onCreateSubmit() {
+    const name = formName.trim();
+    const scope = formScope.trim();
+    if (!name || !scope) return;
+    const id = "onto-" + Date.now();
+    const entities = llm?.entities ?? [];
+    const relationships = llm?.relationships ?? [];
+    const onto: Ontology = {
+      id, name, scope, status: "draft", version: "0.1",
+      objects: entities.length || profiling?.profiling.columns_total || 0,
+      links: relationships.length || profiling?.links_detected.length || 0,
+      rules: Object.keys(qAnswers).length,
+      updated: "刚刚",
+      entities,
+      relationships,
+    };
+    try {
+      const response = await fetch("/api/ontology-drafts/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(onto),
+      });
+      if (!response.ok) throw new Error("ontology persistence failed");
+      const saved = await response.json() as { draft_id?: string };
+      onto.draftId = saved.draft_id;
+    } catch {
+      setNotice("本体草稿保存失败，请确认本地服务已启动后重试。");
+      return;
+    }
+    onCreated?.(onto);
+    closeCreate();
+    navigate(`/ontology/${id}`);
+  }
+
+  function addFiles(newFiles: FileList | null) {
+    if (!newFiles) return;
+    setFiles((f) => [...f, ...Array.from(newFiles)]);
+    if (fileInput.current) fileInput.current.value = "";
+  }
+  function removeFile(index: number) { setFiles((f) => f.filter((_, i) => i !== index)); }
+  function formatSize(bytes: number) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1048576).toFixed(1) + " MB";
+  }
+
+  return (
+    <div className="oo-ontology-page">
+      {notice ? (
+        <div className="oo-notice">{notice}
+          <button className="oo-notice-close" onClick={() => setNotice("")}><i className="ph ph-x"></i></button>
+        </div>
+      ) : null}
+
+      {editable ? (
+        <button className="oo-primary-button oo-ontology-create-action" type="button" onClick={openCreate}>
+          <i className="ph ph-plus" aria-hidden="true" />创建本体
+        </button>
+      ) : null}
+
+      {ontologies.length === 0 ? (
+        <div className="oo-empty">
+          <i className="ph ph-stack oo-empty-icon" />
+          <h2 className="oo-empty-title">还没有本体</h2>
+          <p className="oo-empty-desc">本体是组织的运营语义层，建在数字资产之上。上传业务资料后，系统自动分析数据结构并生成可审核的语义候选。</p>
+          {!editable ? (
+            <p className="muted">请联系管理员或本体建模者创建本体。</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {ontologies.length > 0 ? (
+        <div>
+          <div className="oo-card-grid">
+            {ontologies.map((o) => (
+              <div className="oo-onto-card" key={o.id}>
+                <div className="oo-onto-card-head">
+                  <div className="oo-onto-identity">
+                    <span className="oo-onto-icon"><i className="ph ph-cube" /></span>
+                    <div><h3>{o.name}</h3><p>{o.scope}</p></div>
+                  </div>
+                  {o.status === "draft"
+                    ? <span className="oo-badge oo-badge-draft">v{o.version} 草稿</span>
+                    : <span className="oo-badge oo-badge-ok">v{o.version} 已发布</span>}
+                </div>
+                <div className="oo-onto-stats">
+                  <div><strong>{o.objects}</strong><span>实体</span></div>
+                  <div><strong>{o.links}</strong><span>关系</span></div>
+                  <div><strong>{o.rules}</strong><span>指标/规则</span></div>
+                </div>
+                <div className="oo-onto-footer">
+                  <small className="muted">{o.updated}</small>
+                  <button className="oo-onto-open" type="button" onClick={() => navigate(`/ontology/${o.id}`)}>
+                    查看 <i className="ph ph-arrow-right"></i>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {showCreate ? (
+        <div className="oo-backdrop" onClick={closeCreate}>
+          <div className="oo-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+            <div className="oo-dialog-head">
+              <div>
+                <h2>创建本体</h2>
+                <p>上传业务文件 → 数据自动分析 → LLM 大模型 语义分析与问答 → 确认推荐 → 创建本体。</p>
+              </div>
+              <button className="oo-close-button" type="button" onClick={closeCreate}><i className="ph ph-x"></i></button>
+            </div>
+
+            {createStep === "form" && !refining ? (
+              <>
+                <div className="oo-dialog-form">
+                  <div className="oo-field">
+                    <label>本体名称</label>
+                    <input placeholder="例如：制造业本体、医疗运营本体" value={formName} onChange={(e) => setFormName(e.target.value)} />
+                  </div>
+                  <div className="oo-field">
+                    <label>企业与建模目标</label>
+                    <textarea placeholder="说明行业、组织范围、关键决策场景与核心业务概念。" value={formScope} onChange={(e) => setFormScope(e.target.value)} rows={3} />
+                  </div>
+                  <div className="oo-field">
+                    <label>业务资料（CSV / Excel / PDF / Word）</label>
+                    <div className="oo-upload-zone"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
+                      onClick={() => fileInput.current?.click()}>
+                      <i className="ph ph-file-arrow-up"></i>
+                      <span>拖拽文件到此处 或 点击选择</span>
+                      <small>.csv .xlsx .xls .pdf .docx .doc</small>
+                      <input ref={fileInput} type="file" multiple accept=".csv,.xlsx,.xls,.pdf,.docx,.doc" hidden onChange={(e) => addFiles(e.target.files)} />
+                    </div>
+                    {files.length > 0 ? (
+                      <ul className="oo-upload-list">
+                        {files.map((f, i) => (
+                          <li key={i}>
+                            <i className={`ph ph-${f.name.match(/\.(csv|xlsx|xls)$/i) ? "table" : f.name.match(/\.pdf$/i) ? "file-pdf" : "file-doc"}`}></i>
+                            <span>{f.name}</span>
+                            <small>{formatSize(f.size)}</small>
+                            <button type="button" onClick={() => removeFile(i)}><i className="ph ph-x"></i></button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="oo-dialog-foot">
+                  <button className="oo-secondary-button" type="button" onClick={closeCreate}>取消</button>
+                  <button className="oo-primary-button" type="button" onClick={runProfiling} disabled={creating || !formName.trim() || !formScope.trim()}>
+                    {creating ? "正在分析…" : <><i className="ph ph-magnifying-glass"></i>下一步：分析数据</>}
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {createStep === "llm" && profiling && !refining ? (
+              <>
+                <div className="oo-dialog-form" style={{ maxHeight: "58vh", overflowY: "auto" }}>
+                  <div style={{ padding: "8px 0", color: "oklch(0.35 0.07 160)", fontSize: 13, fontWeight: 700 }}>
+                    <i className="ph ph-check-circle" style={{ marginRight: 6 }}></i>
+                    已解析 {profiling.profiling.files_parsed} 个文件，共 {profiling.profiling.columns_total} 个字段
+                  </div>
+                  <details style={{ marginBottom: 12, fontSize: 12, color: "oklch(0.48 0.018 155)" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 600 }}>查看字段分析详情</summary>
+                    <div style={{ marginTop: 8, padding: "8px 12px", background: "oklch(0.972 0.006 155)", borderRadius: 6 }}>
+                      {profiling.profiling.details.filter((d) => d.type === "tabular").map((d) => (
+                        <div key={d.source} style={{ marginBottom: 6 }}>
+                          <strong>📄 {d.source}</strong>（{d.total_rows} 行）
+                          <div>{d.columns?.map((c) => <span key={c.name} style={{ display: "inline-block", padding: "1px 6px", margin: "2px", border: "1px solid oklch(0.9 0.01 155)", borderRadius: 3 }}>{c.name}</span>)}</div>
+                        </div>
+                      ))}
+                      {profiling.links_detected.length > 0 ? (
+                        <div style={{ marginTop: 8 }}>
+                          检测到 {profiling.links_detected.length} 个潜在关系：
+                          {profiling.links_detected.map((l, i) => (
+                            <div key={i} style={{ fontSize: 11, color: "oklch(0.45 0.115 160)" }}>
+                              {l.message}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
+
+                  {!llm ? (
+                    <div style={{ textAlign: "center", padding: "16px 0" }}>
+                      <button className="oo-primary-button" type="button" onClick={runLLMAnalysis} disabled={analyzing}
+                        style={{ background: "oklch(0.52 0.14 285)" }}>
+                        <i className="ph ph-brain"></i>
+                        {analyzing ? "LLM 分析中，约需 30-60 秒…" : "下一步：进入语义分析与问答"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {llm && llm.questions.length > 0 ? (
+                    <div style={{
+                      border: "1px solid oklch(0.7 0.07 160)", borderRadius: 8,
+                      padding: 16, background: "oklch(0.975 0.018 160)"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "oklch(0.35 0.07 160)" }}>
+                          <i className="ph ph-chat-circle-dots" style={{ marginRight: 6 }}></i>
+                          LLM 大模型 正在询问 {llm.questions.length} 个问题
+                        </div>
+                        <div style={{ fontSize: 11, color: "oklch(0.48 0.018 155)" }}>
+                          {qIndex + 1} / {llm.questions.length}
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const q = llm.questions[qIndex];
+                        const val = qAnswers[q.id];
+                        const answered = val !== undefined && val !== "" ? true : (customDraft ? true : false);
+                        return (
+                          <div>
+                            <div style={{ fontSize: 12, color: "oklch(0.63 0.015 155)", marginBottom: 4 }}>分类：{q.category}</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: "oklch(0.23 0.018 155)", marginBottom: 10, lineHeight: 1.5 }}>
+                              {q.question}
+                            </div>
+                            {q.recommended ? (
+                              <div style={{ fontSize: 11, color: "oklch(0.35 0.07 160)", marginBottom: 8 }}>
+                                AI 建议：<strong>{q.recommended}</strong>{q.recommendation_reason ? ` · ${q.recommendation_reason}` : ""}
+                              </div>
+                            ) : null}
+                            {q.id === "parse-fail" && llm.summary ? (
+                              <details style={{ marginBottom: 10 }}>
+                                <summary style={{ fontSize: 11, color: "oklch(0.58 0.16 28)", cursor: "pointer" }}>查看 LLM 原始返回（前 800 字符）</summary>
+                                <pre style={{ fontSize: 10, color: "oklch(0.45 0.018 155)", background: "#fff", padding: 8, borderRadius: 4, maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", marginTop: 4 }}>{llm.summary.slice(0, 800)}</pre>
+                              </details>
+                            ) : null}
+                            {q.suggested.length > 0 ? (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                                {q.suggested.map((s) => (
+                                  <button
+                                    key={s}
+                                    type="button"
+                                    className={qAnswers[q.id] === s ? "oo-primary-button" : "oo-secondary-button"}
+                                    style={{ padding: "4px 10px", fontSize: 12, minHeight: 30 }}
+                                    onClick={() => answerQuestion(q.id, s)}
+                                  >
+                                    {s}{q.recommended === s ? "（推荐）" : ""}
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  className={qAnswers[q.id] === "" ? "oo-primary-button" : "oo-secondary-button"}
+                                  style={{ padding: "4px 10px", fontSize: 12, minHeight: 30 }}
+                                  onClick={() => { setCustomDraft(""); answerQuestion(q.id, ""); }}
+                                >
+                                  {qAnswers[q.id] === "" ? "正在自定义…" : "自定义…"}
+                                </button>
+                              </div>
+                            ) : null}
+                            {qAnswers[q.id] === "" ? (
+                              <input
+                                placeholder="输入你的回答后点击下一题即可提交"
+                                value={customDraft}
+                                onChange={(e) => setCustomDraft(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") { answerQuestion(q.id, customDraft); setCustomDraft(""); } }}
+                                autoFocus
+                                style={{ width: "100%", padding: "8px 10px", border: "1px solid oklch(0.53 0.13 160)", borderRadius: 6, marginBottom: 8, outline: "none" }}
+                              />
+                            ) : null}
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                              <button className="oo-secondary-button" type="button" onClick={prevQuestion} disabled={qIndex === 0}
+                                style={{ padding: "6px 14px", fontSize: 12, minHeight: 32 }}>
+                                <i className="ph ph-arrow-left"></i> 上一题
+                              </button>
+                              <button className="oo-primary-button" type="button" onClick={nextQuestion} disabled={!answered}
+                                style={{ padding: "6px 14px", fontSize: 12, minHeight: 32 }}>
+                                {qIndex === llm.questions.length - 1 ? <><i className="ph ph-check"></i> 查看推荐列表</> : <><i className="ph ph-arrow-right"></i> 下一题</>}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : null}
+
+                  {llm && llm.questions.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "12px 0" }}>
+                      <p style={{ fontSize: 12, color: "oklch(0.48 0.018 155)", marginBottom: 12 }}>
+                        LLM 大模型 未提出澄清问题，可直接查看推荐。
+                      </p>
+                      <button className="oo-primary-button" type="button" onClick={() => setCreateStep("review")}
+                        style={{ padding: "6px 14px", fontSize: 12 }}>
+                        <i className="ph ph-arrow-right"></i> 查看推荐列表
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="oo-dialog-foot">
+                  <button className="oo-secondary-button" type="button" onClick={() => { setLlm(null); setCreateStep("form"); }}>返回修改</button>
+                </div>
+              </>
+            ) : null}
+
+            {createStep === "review" && llm ? (
+              llm.entities.length === 0 && llm.relationships.length === 0 ? (
+                <div style={{ padding: 20, textAlign: "center", color: "oklch(0.55 0.02 155)", fontSize: 13, lineHeight: 1.7 }}>
+                  <p style={{ marginBottom: 12 }}>LLM 大模型 未能生成有效的本体结构。这可能是因为返回格式无法识别。</p>
+                  <p style={{ fontSize: 11, color: "oklch(0.63 0.015 155)" }}>请关闭窗口后重试创建。</p>
+                </div>
+              ) : (
+              <>
+                <div className="oo-dialog-form" style={{ maxHeight: "58vh", overflowY: "auto" }}>
+                  <div style={{ padding: "8px 0", color: "oklch(0.35 0.07 160)", fontSize: 13, fontWeight: 700, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span><i className="ph ph-list-checks" style={{ marginRight: 6 }}></i>LLM 大模型 推荐本体结构{refining ? "（基于你的回答调整中…）" : ""}</span>
+                    <button className="oo-secondary-button" type="button" onClick={() => setEditing((v) => !v)}
+                      style={{ padding: "3px 10px", fontSize: 11, minHeight: 28 }}>
+                      <i className={`ph ph-${editing ? "eye" : "pencil-simple"}`}></i>
+                      {editing ? "查看" : "编辑"}
+                    </button>
+                  </div>
+                  {llm.summary && !editing ? (
+                    <p style={{ fontSize: 12, color: "oklch(0.48 0.018 155)", background: "oklch(0.972 0.006 155)", padding: 10, borderRadius: 6, lineHeight: 1.55, marginBottom: 12 }}>
+                      {llm.summary}
+                    </p>
+                  ) : null}
+
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "oklch(0.45 0.115 160)" }}>
+                    <i className="ph ph-cube" style={{ marginRight: 5 }}></i>{llm.entities.length} 个实体
+                  </div>
+                  {llm.entities.map((e, ei) => (
+                    <div key={e.name} style={{ border: "1px solid oklch(0.9 0.01 155)", borderRadius: 6, padding: 10, marginBottom: 8, fontSize: 12, background: "#fff" }}>
+                      {editing ? (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <input value={e.label} placeholder="中文名" style={{ flex: 1, padding: "4px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12 }} onChange={(ev) => {
+                              const next = [...llm.entities]; next[ei] = { ...next[ei], label: ev.target.value }; setLlm({ ...llm, entities: next });
+                            }} />
+                            <input value={e.name} placeholder="英文名" style={{ flex: 1, padding: "4px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12 }} onChange={(ev) => {
+                              const next = [...llm.entities]; next[ei] = { ...next[ei], name: ev.target.value }; setLlm({ ...llm, entities: next });
+                            }} />
+                            <button type="button" onClick={() => { setLlm({ ...llm, entities: llm.entities.filter((_, k) => k !== ei) }); }}
+                              style={{ border: 0, background: "transparent", color: "oklch(0.58 0.18 28)", cursor: "pointer", fontSize: 16 }}>
+                              <i className="ph ph-trash"></i>
+                            </button>
+                          </div>
+                          <textarea value={e.description} placeholder="业务定义" rows={2} style={{ padding: "4px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12, resize: "vertical" }} onChange={(ev) => {
+                            const next = [...llm.entities]; next[ei] = { ...next[ei], description: ev.target.value }; setLlm({ ...llm, entities: next });
+                          }} />
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "oklch(0.48 0.018 155)", marginTop: 4 }}>属性</div>
+                          {e.properties.map((p, pi) => (
+                            <div key={pi} style={{ display: "flex", gap: 6, alignItems: "center", background: "oklch(0.972 0.006 155)", padding: "4px 6px", borderRadius: 4 }}>
+                              <input value={p.name} placeholder="属性名" style={{ flex: 1, padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 3, fontSize: 11 }} onChange={(ev) => {
+                                const next = [...llm.entities]; const props = [...next[ei].properties]; props[pi] = { ...props[pi], name: ev.target.value }; next[ei] = { ...next[ei], properties: props }; setLlm({ ...llm, entities: next });
+                              }} />
+                              <select value={p.type} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 3, fontSize: 11 }} onChange={(ev) => {
+                                const next = [...llm.entities]; const props = [...next[ei].properties]; props[pi] = { ...props[pi], type: ev.target.value }; next[ei] = { ...next[ei], properties: props }; setLlm({ ...llm, entities: next });
+                              }}>
+                                <option value="string">string</option>
+                                <option value="integer">integer</option>
+                                <option value="float">float</option>
+                                <option value="date">date</option>
+                                <option value="boolean">boolean</option>
+                                <option value="enum">enum</option>
+                              </select>
+                              <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}>
+                                <input type="checkbox" checked={p.is_key} onChange={(ev) => {
+                                  const next = [...llm.entities]; const props = [...next[ei].properties]; props[pi] = { ...props[pi], is_key: ev.target.checked }; next[ei] = { ...next[ei], properties: props }; setLlm({ ...llm, entities: next });
+                                }} /> 主键
+                              </label>
+                              <button type="button" onClick={() => {
+                                const next = [...llm.entities]; next[ei] = { ...next[ei], properties: e.properties.filter((_, k) => k !== pi) }; setLlm({ ...llm, entities: next });
+                              }} style={{ border: 0, background: "transparent", color: "oklch(0.58 0.18 28)", cursor: "pointer", fontSize: 14 }}>
+                                <i className="ph ph-x"></i>
+                              </button>
+                            </div>
+                          ))}
+                          <button type="button" className="oo-secondary-button" style={{ padding: "3px 10px", fontSize: 11, minHeight: 28 }} onClick={() => {
+                            const next = [...llm.entities]; next[ei] = { ...next[ei], properties: [...e.properties, { name: "", type: "string", is_key: false, description: "" }] }; setLlm({ ...llm, entities: next });
+                          }}>
+                            <i className="ph ph-plus"></i> 添加属性
+                          </button>
+                          <div style={{ color: "oklch(0.63 0.015 155)", fontSize: 11 }}>来源：{e.source_file}</div>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ minWidth: 24, color: "oklch(0.45 0.115 160)", fontWeight: 700, fontSize: 11 }}>{ei + 1}.</span>
+                            <strong style={{ fontWeight: 600 }}>{e.label} ({e.name})</strong>
+                          </div>
+                          <div style={{ color: "oklch(0.48 0.018 155)", marginBottom: 6, paddingLeft: 30 }}>{e.description}</div>
+                          <div style={{ color: "oklch(0.63 0.015 155)", fontSize: 11, paddingLeft: 30 }}>来源：{e.source_file || "未指定"}</div>
+                          {e.properties.length > 0 ? (
+                            <div style={{ marginTop: 6, paddingLeft: 30, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                              {e.properties.map((p) => (
+                                <span key={p.name} style={{ padding: "2px 6px", background: "oklch(0.94 0.04 160)", borderRadius: 3, fontSize: 11 }}>
+                                  {p.is_key ? "🔑 " : ""}{p.name} : {p.type}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ color: "oklch(0.58 0.16 28)", fontSize: 11, paddingLeft: 30, marginTop: 6, fontStyle: "italic" }}>该实体未提取出属性</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                  {editing ? (
+                    <button type="button" className="oo-secondary-button" style={{ width: "100%", padding: "6px", fontSize: 12 }} onClick={() => {
+                      setLlm({ ...llm, entities: [...llm.entities, { name: "", label: "", description: "", source_file: "", properties: [] }] });
+                    }}>
+                      <i className="ph ph-plus"></i> 添加实体
+                    </button>
+                  ) : null}
+
+                  {llm.relationships.length > 0 ? (
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: 700, marginTop: 12, marginBottom: 6, color: "oklch(0.45 0.115 160)" }}>
+                        <i className="ph ph-link" style={{ marginRight: 5 }}></i>{llm.relationships.length} 个关系
+                      </div>
+                      {llm.relationships.map((r, i) => {
+                        const fromLabel = llm.entities.find((e) => e.name === r.from_entity)?.label || r.from_entity;
+                        const toLabel = llm.entities.find((e) => e.name === r.to_entity)?.label || r.to_entity;
+                        const hasFromTo = r.from_entity && r.to_entity;
+                        return (
+                        <div key={i} style={{ padding: "6px 10px", borderLeft: "3px solid oklch(0.53 0.13 160)", marginBottom: 6, fontSize: 12, color: "oklch(0.48 0.018 155)", lineHeight: 1.5, background: "#fff", display: "grid", gap: editing ? 6 : 0 }}>
+                          {editing ? (
+                            <>
+                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                <span style={{ minWidth: 24, color: "oklch(0.45 0.115 160)", fontWeight: 700, fontSize: 11 }}>{i + 1}.</span>
+                                <select value={r.from_entity || ""} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12, maxWidth: 120 }} onChange={(ev) => {
+                                  const next = [...llm.relationships]; next[i] = { ...next[i], from_entity: ev.target.value }; setLlm({ ...llm, relationships: next });
+                                }}>
+                                  <option value="">— 未指定 —</option>
+                                  {llm.entities.map((e) => <option key={e.name} value={e.name}>{e.label || e.name}</option>)}
+                                </select>
+                                <span style={{ color: "oklch(0.63 0.015 155)" }}>→</span>
+                                <select value={r.to_entity || ""} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12, maxWidth: 120 }} onChange={(ev) => {
+                                  const next = [...llm.relationships]; next[i] = { ...next[i], to_entity: ev.target.value }; setLlm({ ...llm, relationships: next });
+                                }}>
+                                  <option value="">— 未指定 —</option>
+                                  {llm.entities.map((e) => <option key={e.name} value={e.name}>{e.label || e.name}</option>)}
+                                </select>
+                                <select value={r.type} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12 }} onChange={(ev) => {
+                                  const next = [...llm.relationships]; next[i] = { ...next[i], type: ev.target.value as any }; setLlm({ ...llm, relationships: next });
+                                }}>
+                                  <option value="one_to_many">一对多</option>
+                                  <option value="many_to_one">多对一</option>
+                                  <option value="many_to_many">多对多</option>
+                                  <option value="one_to_one">一对一</option>
+                                </select>
+                                <button type="button" onClick={() => { setLlm({ ...llm, relationships: llm.relationships.filter((_, k) => k !== i) }); }}
+                                  style={{ border: 0, background: "transparent", color: "oklch(0.58 0.18 28)", cursor: "pointer", fontSize: 16 }}>
+                                  <i className="ph ph-trash"></i>
+                                </button>
+                              </div>
+                              <input value={r.description} placeholder="谁与谁是什么关系，例如：客户可以下订单" style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 11 }} onChange={(ev) => {
+                                const next = [...llm.relationships]; next[i] = { ...next[i], description: ev.target.value }; setLlm({ ...llm, relationships: next });
+                              }} />
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <span style={{ minWidth: 24, color: "oklch(0.45 0.115 160)", fontWeight: 700, fontSize: 11 }}>{i + 1}.</span>
+                                <strong style={{ color: "oklch(0.23 0.018 155)" }}>{r.name || `关系 ${i + 1}`}</strong>
+                                <span style={{ color: "oklch(0.63 0.015 155)" }}>·</span>
+                                <span>{r.type === "one_to_many" ? "一对多" : r.type === "many_to_one" ? "多对一" : r.type === "many_to_many" ? "多对多" : r.type === "one_to_one" ? "一对一" : "未指定基数"}</span>
+                              </div>
+                              <div style={{ color: "oklch(0.48 0.018 155)", paddingLeft: 30, marginTop: 2 }}>
+                                {hasFromTo ? (
+                                  <><span>{fromLabel}</span><span style={{ margin: "0 6px", color: "oklch(0.45 0.115 160)" }}>→</span><span>{toLabel}</span></>
+                                ) : (
+                                  <span style={{ color: "oklch(0.58 0.16 28)", fontStyle: "italic" }}>from/to 未指定，需手动选择实体</span>
+                                )}
+                              </div>
+                              {r.description ? (
+                                <div style={{ color: "oklch(0.63 0.015 155)", fontSize: 11, paddingLeft: 30, marginTop: 2 }}>{r.description}</div>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                        );
+                      })}
+                      {editing ? (
+                        <button type="button" className="oo-secondary-button" style={{ width: "100%", padding: "6px", fontSize: 12 }} onClick={() => {
+                          setLlm({ ...llm, relationships: [...llm.relationships, { name: "", from_entity: "", to_entity: "", type: "many_to_one", description: "", based_on: "" }] });
+                        }}>
+                          <i className="ph ph-plus"></i> 添加关系
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {Object.keys(qAnswers).length > 0 ? (
+                    <details style={{ marginTop: 12 }}>
+                      <summary style={{ cursor: "pointer", fontSize: 12, color: "oklch(0.48 0.018 155)", fontWeight: 600 }}>查看 {Object.keys(qAnswers).length} 个问答记录</summary>
+                      <div style={{ marginTop: 8 }}>
+                        {llm.questions.map((q) => qAnswers[q.id] ? (
+                          <div key={q.id} style={{ padding: 8, background: "oklch(0.972 0.006 155)", borderRadius: 4, marginBottom: 4, fontSize: 11 }}>
+                            <div style={{ color: "oklch(0.48 0.018 155)" }}>问：{q.question}</div>
+                            <div style={{ color: "oklch(0.35 0.07 160)", fontWeight: 600 }}>答：{qAnswers[q.id]}</div>
+                          </div>
+                        ) : null)}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+                <div className="oo-dialog-foot">
+                  <button className="oo-secondary-button" type="button" onClick={() => setCreateStep("llm")}>返回问答</button>
+                  <button className="oo-primary-button" type="button" onClick={onCreateSubmit}>
+                    <i className="ph ph-check"></i>确认并创建本体
+                  </button>
+                </div>
+              </>
+              )
+            ) : null}
+
+            {refining ? (
+              <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                <i className="ph ph-spinner oo-spinner" style={{ fontSize: 32, color: "oklch(0.53 0.13 160)" }}></i>
+                <p style={{ marginTop: 16, fontSize: 14, fontWeight: 600, color: "oklch(0.35 0.07 160)" }}>
+                  LLM 大模型 正在基于你的回答调整本体结构…
+                </p>
+                <p style={{ fontSize: 11, color: "oklch(0.55 0.02 155)", marginTop: 8 }}>
+                  所有确认的问题将反馈给大模型，让推荐更贴近业务现实。约需 15-30 秒。
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }

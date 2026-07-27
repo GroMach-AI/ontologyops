@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import re
 from dataclasses import asdict, dataclass
 from io import BytesIO
 from pathlib import Path
@@ -10,11 +8,18 @@ from uuid import uuid4
 
 import duckdb
 import pandas as pd
-import pymysql
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from app.models.platform import DataSource, Dataset, PipelineNodeRun, PipelineRun
+from app.models.platform import (
+    DataSource,
+    Dataset,
+    OntologyEntityInstanceRecord,
+    OntologyMappingRecord,
+    PipelineNodeRun,
+    PipelineRun,
+    UserOntology,
+)
 
 
 FIXED_NODE_TYPES = (
@@ -22,8 +27,6 @@ FIXED_NODE_TYPES = (
     "raw_dataset",
     "transform",
     "clean_dataset",
-    "ontology_mapping",
-    "publish",
 )
 
 
@@ -103,8 +106,6 @@ class PipelineService:
                 PipelineNodeResult("raw_dataset", "success", raw_path.name),
                 PipelineNodeResult("transform", "success", "deduplicate"),
                 PipelineNodeResult("clean_dataset", "success", clean_path.name),
-                PipelineNodeResult("ontology_mapping", "success", "mapping-ready"),
-                PipelineNodeResult("publish", "success", "trusted-dataset"),
             ],
             preview={
                 "columns": columns,
@@ -128,6 +129,11 @@ class PipelineService:
         source_id = str(uuid4())
         source_path = self.upload_dir / f"{source_id}-{_safe_filename(filename)}"
         source_path.write_bytes(content)
+        dataframe = self._read_dataframe(source_path, kind)
+        dataset_id = str(uuid4())
+        dataset_path = self.dataset_dir / f"{dataset_id}-profiled.parquet"
+        _write_dataframe_parquet(dataframe, dataset_path)
+        profile = _profile_dataframe(dataframe)
         with Session(engine) as session:
             session.add(
                 DataSource(
@@ -137,8 +143,23 @@ class PipelineService:
                     config_json=json.dumps({"path": str(source_path), "pipeline_id": source_id}),
                 )
             )
+            session.add(
+                Dataset(
+                    id=dataset_id,
+                    source_id=source_id,
+                    stage="profiled",
+                    schema_json=json.dumps({"columns": profile}, ensure_ascii=False),
+                    parquet_path=str(dataset_path),
+                )
+            )
             session.commit()
-        return {"source_id": source_id, "pipeline_id": source_id, "status": "ready"}
+        return {
+            "source_id": source_id,
+            "pipeline_id": source_id,
+            "dataset_version_id": dataset_id,
+            "lifecycle_status": "profiled",
+            "profile": profile,
+        }
 
     def run_registered_pipeline(
         self,
@@ -154,7 +175,7 @@ class PipelineService:
             filename = source.name
             kind = source.kind
             config = json.loads(source.config_json)
-        if kind not in {"csv", "xlsx", "mysql"}:
+        if kind not in {"csv", "xlsx"}:
             raise ValueError("Only structured sources can run a data pipeline")
 
         run_id = str(uuid4())
@@ -177,8 +198,6 @@ class PipelineService:
                 PipelineNodeResult("raw_dataset", "success", raw_path.name),
                 PipelineNodeResult("transform", "success", _transform_summary(transforms)),
                 PipelineNodeResult("clean_dataset", "success", clean_path.name),
-                PipelineNodeResult("ontology_mapping", "success", "mapping-ready"),
-                PipelineNodeResult("publish", "success", "trusted-dataset"),
             ]
             with Session(engine) as session:
                 session.add_all(
@@ -193,7 +212,7 @@ class PipelineService:
                         Dataset(
                             id=dataset_id,
                             source_id=source_id,
-                            stage="trusted",
+                            stage="clean",
                             schema_json=json.dumps({"columns": preview["columns"]}),
                             parquet_path=str(clean_path),
                         ),
@@ -270,6 +289,126 @@ class PipelineService:
             ]
         }
 
+    def materialize_entity_instances(
+        self,
+        engine: Engine,
+        pipeline_id: str,
+        *,
+        dataset_id: str,
+        ontology_id: str,
+        entity_id: str,
+        primary_key_field: str,
+        field_mappings: dict[str, str],
+    ) -> dict[str, object]:
+        """Apply a reviewed mapping to a trusted dataset and persist entity instances."""
+        with Session(engine) as session:
+            source = session.get(DataSource, pipeline_id)
+            dataset = session.get(Dataset, dataset_id)
+            ontology = session.get(UserOntology, ontology_id)
+            if source is None:
+                raise KeyError("Pipeline source not found")
+            if dataset is None or dataset.source_id != source.id:
+                raise ValueError("Dataset does not belong to this pipeline")
+            if dataset.stage != "trusted":
+                raise ValueError("Only trusted dataset versions can be materialized")
+            if ontology is None:
+                raise KeyError("Ontology not found")
+            if ontology.status != "published":
+                raise ValueError("Only published ontologies can receive entity instances")
+            entities = json.loads(ontology.entities_json)
+            entity = next((item for item in entities if item.get("name") == entity_id), None)
+            if entity is None:
+                raise ValueError("Entity type does not exist in the selected ontology")
+            allowed_properties = {
+                str(property.get("name"))
+                for property in entity.get("properties", [])
+                if isinstance(property, dict) and property.get("name")
+            }
+            if not field_mappings or any(target not in allowed_properties for target in field_mappings):
+                raise ValueError("Field mappings must target properties of the selected entity type")
+            if primary_key_field not in field_mappings.values():
+                raise ValueError("The entity primary key source field must be mapped")
+            latest_run = session.scalar(
+                select(PipelineRun)
+                .where(PipelineRun.source_id == source.id, PipelineRun.status == "success")
+                .order_by(PipelineRun.created_at.desc())
+            )
+            if latest_run is None:
+                raise ValueError("A successful pipeline run is required before materialization")
+            mapping_id = str(uuid4())
+            mapping = OntologyMappingRecord(
+                id=mapping_id,
+                dataset_id=dataset_id,
+                ontology_id=ontology_id,
+                entity_id=entity_id,
+                primary_key_field=primary_key_field,
+                field_mappings_json=json.dumps(field_mappings, ensure_ascii=False),
+                status="applied",
+            )
+            session.add(mapping)
+            session.commit()
+            parquet_path = dataset.parquet_path
+            run_id = latest_run.id
+
+        dataframe = self._read_parquet_dataframe(Path(parquet_path))
+        required_fields = {primary_key_field, *field_mappings.values()}
+        missing_fields = sorted(required_fields - set(dataframe.columns))
+        if missing_fields:
+            raise ValueError(f"Mapped source fields are missing: {', '.join(missing_fields)}")
+
+        written_count = 0
+        with Session(engine) as session:
+            for row in dataframe.to_dict(orient="records"):
+                key_value = row.get(primary_key_field)
+                if pd.isna(key_value) or str(key_value).strip() == "":
+                    raise ValueError("Entity primary key contains an empty value")
+                properties = {
+                    target_field: _json_scalar(row.get(source_field))
+                    for target_field, source_field in field_mappings.items()
+                }
+                entity_key = str(key_value)
+                existing = session.scalar(
+                    select(OntologyEntityInstanceRecord).where(
+                        OntologyEntityInstanceRecord.ontology_id == ontology_id,
+                        OntologyEntityInstanceRecord.entity_id == entity_id,
+                        OntologyEntityInstanceRecord.entity_key == entity_key,
+                    )
+                )
+                if existing is None:
+                    session.add(
+                        OntologyEntityInstanceRecord(
+                            id=str(uuid4()),
+                            ontology_id=ontology_id,
+                            entity_id=entity_id,
+                            entity_key=entity_key,
+                            properties_json=json.dumps(properties, ensure_ascii=False),
+                            source_dataset_id=dataset_id,
+                            mapping_id=mapping_id,
+                            pipeline_run_id=run_id,
+                        )
+                    )
+                else:
+                    existing.properties_json = json.dumps(properties, ensure_ascii=False)
+                    existing.source_dataset_id = dataset_id
+                    existing.mapping_id = mapping_id
+                    existing.pipeline_run_id = run_id
+                written_count += 1
+            session.commit()
+            total_count = session.query(OntologyEntityInstanceRecord).filter_by(
+                ontology_id=ontology_id,
+                entity_id=entity_id,
+            ).count()
+
+        return {
+            "mapping_id": mapping_id,
+            "pipeline_run_id": run_id,
+            "dataset_id": dataset_id,
+            "ontology_id": ontology_id,
+            "entity_id": entity_id,
+            "written_count": written_count,
+            "total_count": total_count,
+        }
+
     def register_result(
         self,
         engine: Engine,
@@ -292,7 +431,7 @@ class PipelineService:
                 Dataset(
                     id=result.dataset_id,
                     source_id=result.source_id,
-                    stage="trusted",
+                    stage="clean",
                     schema_json=json.dumps(schema, ensure_ascii=False),
                     parquet_path=str(clean_path),
                 )
@@ -305,28 +444,14 @@ class PipelineService:
         return pd.read_csv(path)
 
     def _read_registered_dataframe(self, config: dict[str, object], kind: str) -> pd.DataFrame:
-        if kind in {"csv", "xlsx"}:
-            return self._read_dataframe(Path(str(config["path"])), kind)
-        table = str(config.get("table", ""))
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
-            raise ValueError("Invalid MySQL table name")
-        password = os.getenv(str(config.get("password_env", "")))
-        if not password:
-            raise ValueError("MySQL password environment variable is not configured")
-        connection = pymysql.connect(
-            host=str(config["host"]),
-            port=int(config["port"]),
-            user=str(config["username"]),
-            password=password,
-            database=str(config["database"]),
-            connect_timeout=5,
-            read_timeout=10,
-        )
+        return self._read_dataframe(Path(str(config["path"])), kind)
+
+    @staticmethod
+    def _read_parquet_dataframe(path: Path) -> pd.DataFrame:
+        connection = duckdb.connect()
         try:
-            with connection.cursor() as cursor:
-                cursor.execute(f"SELECT * FROM `{table}`")
-                columns = [column[0] for column in cursor.description]
-                return pd.DataFrame(cursor.fetchall(), columns=columns)
+            escaped_path = path.as_posix().replace("'", "''")
+            return connection.execute(f"SELECT * FROM read_parquet('{escaped_path}')").fetchdf()
         finally:
             connection.close()
 
@@ -386,6 +511,25 @@ def _dataframe_preview(dataframe: pd.DataFrame) -> dict[str, object]:
     return {"columns": list(dataframe.columns), "rows": rows, "row_count": len(dataframe)}
 
 
+def _profile_dataframe(dataframe: pd.DataFrame) -> list[dict[str, object]]:
+    """Return a bounded, serialisable column profile for a DatasetVersion."""
+    profile: list[dict[str, object]] = []
+    for column in dataframe.columns:
+        series = dataframe[column]
+        non_null = series.dropna()
+        total = len(series)
+        profile.append(
+            {
+                "name": str(column),
+                "type": str(series.dtype),
+                "unique_count": int(non_null.nunique()),
+                "null_percent": round((total - len(non_null)) / max(total, 1) * 100, 1),
+                "samples": [str(value) for value in non_null.head(5).tolist()],
+            }
+        )
+    return profile
+
+
 def _write_dataframe_parquet(dataframe: pd.DataFrame, path: Path) -> None:
     connection = duckdb.connect()
     try:
@@ -394,3 +538,11 @@ def _write_dataframe_parquet(dataframe: pd.DataFrame, path: Path) -> None:
         connection.execute(f"COPY frame TO '{escaped_path}' (FORMAT PARQUET)")
     finally:
         connection.close()
+
+
+def _json_scalar(value: object) -> object | None:
+    if value is None or pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        return value.item()
+    return value

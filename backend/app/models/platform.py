@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -75,6 +75,10 @@ class AuditEvent(Base):
     actor: Mapped[str] = mapped_column(String(64), nullable=False)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    previous_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
@@ -115,3 +119,107 @@ class ModelProviderConfig(Base):
     max_tokens: Mapped[int] = mapped_column(Integer, default=1024, nullable=False)
     agent_enabled: Mapped[str] = mapped_column(String(8), default="true", nullable=False)
     modeling_enabled: Mapped[str] = mapped_column(String(8), default="true", nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), default="unconfigured", nullable=False)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class UserOntology(Base):
+    """User-created ontologies persisted across page refreshes."""
+    __tablename__ = "user_ontologies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    version: Mapped[str] = mapped_column(String(16), default="0.1", nullable=False)
+    objects: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    links: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    rules: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    entities_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    relationships_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    draft_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class OntologyDraftRecord(Base):
+    __tablename__ = "ontology_drafts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(512), nullable=False)
+    definition_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="editing", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class OntologyReleaseRecord(Base):
+    __tablename__ = "ontology_releases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ontology_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    semantic_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    manifest_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="published", nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class CurrentOntologyRelease(Base):
+    __tablename__ = "current_ontology_releases"
+
+    ontology_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    release_id: Mapped[str] = mapped_column(String(36), nullable=False)
+
+
+class OntologyMappingRecord(Base):
+    """A reviewed projection from a trusted dataset version to one entity type."""
+    __tablename__ = "ontology_mappings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    primary_key_field: Mapped[str] = mapped_column(String(128), nullable=False)
+    field_mappings_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="applied")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+
+
+class OntologyEntityInstanceRecord(Base):
+    """Materialized row-level business entity with source and run evidence."""
+    __tablename__ = "ontology_entity_instances"
+    __table_args__ = (
+        UniqueConstraint("ontology_id", "entity_id", "entity_key", name="uq_ontology_entity_instance"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    entity_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    properties_json: Mapped[str] = mapped_column(Text, nullable=False)
+    source_dataset_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    mapping_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    pipeline_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class OntologyRelationInstanceRecord(Base):
+    """Reserved evidence-backed storage for a materialized Link instance."""
+    __tablename__ = "ontology_relation_instances"
+    __table_args__ = (
+        UniqueConstraint("ontology_id", "relationship_id", "from_entity_key", "to_entity_key", name="uq_ontology_relation_instance"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    relationship_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    from_entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    from_entity_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    to_entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    to_entity_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_dataset_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    mapping_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    pipeline_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)

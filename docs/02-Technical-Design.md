@@ -12,7 +12,7 @@
 
 OntologyOps v1 采用**模块化单体**，而不是微服务或通用数据平台：一个 FastAPI 后端负责资源、运行、策略和 API；React/Vite 负责工作台；SQLite 保存平台元数据与审计；本地 Parquet + DuckDB 承担上传数据的受控读取与聚合。
 
-本体不是 SQL 的替代层。对象、属性、Link、指标、函数和规则发布后会编译为一个**只读、版本固定的查询目录**。智能助手只能从目录中选择受授权的工具并提交结构化参数；运行时将工具计划校验、授权并编译为参数化 DuckDB 查询。模型、前端和用户问题均不能下发自由 SQL、表名或任意代码。
+本体不是 SQL 的替代层。对象、属性、Link、指标、函数和规则发布后会编译为一个**只读、版本固定的查询目录**。企业数据问题的智能助手只能从目录中选择受授权的工具并提交结构化参数；运行时将工具计划校验、授权并编译为参数化 DuckDB 查询。其他问题可走通用模型路由，但该路由不接收企业数据、本体证据或工具结果。模型、前端和用户问题均不能下发自由 SQL、表名或任意代码。
 
 首个开发目标不是把既有工厂演示“修补成通用能力”，而是先交付一条新数据端到端链路：
 
@@ -225,6 +225,15 @@ Mapping 仅支持后端定义的受限表达式：
 
 ## 6. 受控查询与智能助手设计
 
+### 6.0 双路由边界
+
+```text
+命中已发布本体实体或上一轮受控实体追问 → 本体工具路由 → 授权、字段裁剪、证据与审计
+其他问题 → 通用模型路由 → 不读取企业数据，显式标注通用回答和当前模型模式
+```
+
+通用路由不属于 ToolRegistry，也不生成企业数据证据；对模型身份问题仅读取安全的 Provider/模型/模式元信息，不读取 Key、Base URL 或调用机密。未启用已验证真实模型时，通用路由必须明确失败原因，不能伪装成知识回答。
+
 ### 6.1 工具目录而非 text-to-SQL
 
 `ReleaseCompiler` 依据 manifest 编译以下只读工具类别：
@@ -293,14 +302,15 @@ field_redactions, evidence_items
 | Provider | 用途 | 实现边界 |
 | --- | --- | --- |
 | GPT | 候选生成、工具计划、回答组织 | 使用服务端环境变量；调用前后记录去敏元数据。 |
-| DeepSeek | 同 GPT 的可选路由 | 使用兼容 HTTP 接口；模型名、endpoint、超时均由 ModelProfile 管理。 |
+| DeepSeek | 首选候选生成与受控回答路由 | OpenAI 兼容 HTTP 接口；可选 `deepseek-v4-flash` 或 `deepseek-v4-pro`，模型名、endpoint、超时均由 ModelProfile 管理。 |
+| 兼容 API | 管理员手工配置的 OpenAI 兼容模型 | 使用本机 `secret_ref` 与 Base URL；不承诺其他协议或模型市场。 |
 | Mock | 无密钥的可重复演示/测试 | 返回固定的结构化 ProviderResponse，所有调用携带 `mode=mock`，UI 不得标为真实模型。 |
 
 ### 7.2 ModelProfile
 
 `ModelProfile` 保存 `provider`、`model_name`、`secret_ref`、`base_url`、`timeout_ms`、`max_output_tokens`、`enabled`、`allowed_purposes`、`verification_status`。密钥值从不进入表、API 返回、审计 payload、日志或前端。
 
-只有 `verification_status=verified` 且 `enabled=true` 的外部 profile 可用于候选生成或助手。Mock 独立启用，且 UI 的会话、ToolCall 和 AuditEvent 都必须可见 `mock` 标识。
+只有 `verification_status=verified` 且 `enabled=true` 的外部 profile 可用于候选生成或助手。真实 Profile 缺 Key、连通性异常或调用异常时返回显式失败，绝不自动改用 Mock。Mock 独立启用，且 UI 的会话、ToolCall 和 AuditEvent 都必须可见 `mock` 标识。
 
 ### 7.3 模型调用审计
 
@@ -385,7 +395,7 @@ frontend/src/
 | 文档 | 不处理扫描件 OCR；提取异常以失败 run 记录。 |
 | 查询 | DuckDB 只读、参数绑定、资源和字段白名单、输出/超时预算。 |
 | 备份 | 停机或 SQLite 在线备份：metadata DB + `data/` 目录作为同一备份单元。 |
-| 恢复 | 先还原最近确认的 staging/prod 标签与相应数据快照，再诊断；遵循 `04-Development-Version-Control.md`。 |
+| 恢复 | 先还原最近确认的 `local-*` / `release-*` 标签与相应数据快照，再诊断；遵循 `04-Development-Version-Control.md`。 |
 | 观测 | 结构化服务日志 + PipelineRun/ToolCall/PolicyDecision/AuditEvent；所有请求携带 correlation ID。 |
 
 ## 11. 测试与浏览器验收策略
@@ -402,7 +412,7 @@ frontend/src/
 
 ### 11.2 不可替代的浏览器验收
 
-每次模块准备进入 staging 前，生成一组带随机供应商名、订单号、日期和库存值的 CSV。断言：
+每次模块准备进入本地验收前，生成一组带随机供应商名、订单号、日期和库存值的 CSV。断言：
 
 1. 原始文件与 DatasetVersion 的行数、字段、profile 来自新文件；
 2. 质量失败样本能定位到新文件中的故意异常；
@@ -423,9 +433,9 @@ frontend/src/
 | 3. M3 本体发布 | 草稿、映射 DSL、候选、校验、release、回滚 | M1/M2 | 新数据产生的发布 manifest 和工具目录正确。 |
 | 4. M4 治理 | Policy、字段裁剪、血缘、影响分析、审计 | M0/M3 | 页面、工具发现、执行、证据一致拒绝。 |
 | 5. M5/M6 智能助手 | Profile、Mock/GPT/DeepSeek、受控计划与证据 | M3/M4 | 新数据问答可回溯至 SourceAsset。 |
-| 6. 集成验收 | PRD E2E-01/02/03、浏览器记录、staging tag | 所有模块 | 产品负责人浏览器确认后再进入下一阶段。 |
+| 6. 集成验收 | PRD E2E-01/02/03、浏览器记录、local tag | 所有模块 | 产品负责人本地浏览器确认后再进入下一阶段。 |
 
-每一阶段均遵守版本控制文档：改动提交至 `dev`、部署 staging、项目负责人确认、打 staging 标签；仅确认后合并 `main` 并打 production 标签。由于当前仓库尚无首次提交和远端，阶段 0 之前必须先确认远端并建立 `main`/`dev` 初始基线。
+每一阶段均遵守版本控制文档：改动提交至 `dev`、在本地完成自动化测试和浏览器验收、项目负责人确认后打 `local-*` 标签；仅确认后合并 `main` 并打 `release-*` 标签。本期不建设独立 staging 或 production 环境。
 
 ## 13. 已知风险与明确取舍
 
@@ -451,7 +461,7 @@ frontend/src/
 
 1. 同意 v1 使用 **SQLite + Parquet + DuckDB + FastAPI + React/Vite** 的模块化单体，不引入微服务、向量库或工作流引擎；
 2. 同意以新的资源关系内核和 release manifest 替换现有固定工厂 SQL/关键词 Agent 路径；
-3. 同意 Agent 的唯一查询通道是 release 编译的只读 ToolRegistry，且无自由 SQL；
+3. 同意企业数据问题的唯一查询通道是 release 编译的只读 ToolRegistry，且无自由 SQL；通用模型路由不读取企业数据；
 4. 同意文档仅用于可读文本提取和本体建模证据，不在本期建设通用知识库；
 5. 同意实现顺序从 M0 资源内核开始，并以每个阶段的新上传数据浏览器验收作为门禁。
 

@@ -10,7 +10,7 @@ from app.main import app
 from app.models.platform import DataSource, Dataset
 
 
-def test_pipeline_runs_fixed_six_stage_flow(tmp_path, monkeypatch) -> None:
+def test_pipeline_stops_at_clean_dataset_until_quality_rules_are_reviewed(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ONTOLOGYOPS_DATA_DIR", str(tmp_path))
     client = TestClient(app)
 
@@ -27,7 +27,7 @@ def test_pipeline_runs_fixed_six_stage_flow(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 201
     body = response.json()
-    assert body["status"] == "ready"
+    assert body["lifecycle_status"] == "profiled"
     run = client.post(f"/api/pipelines/{body['pipeline_id']}/run", json={})
     assert run.status_code == 200
     result = run.json()
@@ -36,8 +36,6 @@ def test_pipeline_runs_fixed_six_stage_flow(tmp_path, monkeypatch) -> None:
         "raw_dataset",
         "transform",
         "clean_dataset",
-        "ontology_mapping",
-        "publish",
     ]
     assert all(node["status"] == "success" for node in result["nodes"])
     assert result["preview"]["row_count"] == 2
@@ -56,7 +54,7 @@ def test_pipeline_result_can_be_registered_as_data_assets(tmp_path: Path) -> Non
     assert source is not None
     assert source.name == "orders.csv"
     assert dataset is not None
-    assert dataset.stage == "trusted"
+    assert dataset.stage == "clean"
 
 
 def test_uploaded_assets_are_listed(tmp_path, monkeypatch) -> None:

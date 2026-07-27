@@ -1,173 +1,349 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from app.domain.semantic_tools import SemanticTools
-from app.models.platform import OntologyVersion
+from app.domain.authorization import apply_field_policy
+from app.models.platform import (
+    DataSource,
+    Dataset,
+    OntologyEntityInstanceRecord,
+    UserOntology,
+)
 from app.services.audit import write_audit_event
-from app.services.model_provider import ModelProviderService
+from app.services.model_provider import ModelCompletion, ModelProviderService, ModelProviderUnavailable
+
+
+ENTITY_ALIASES: dict[str, tuple[str, ...]] = {
+    "SalesOrder": ("销售订单", "订单", "销售"),
+    "Supplier": ("供应商", "供货商"),
+    "Customer": ("客户",),
+    "Product": ("产品", "成品"),
+    "Material": ("物料", "材料", "原料"),
+    "InventoryLot": ("库存", "库存批次", "批次"),
+    "BomLine": ("bom", "物料清单", "清单"),
+    "ProductionPlan": ("生产计划", "生产工单", "工单"),
+}
+COUNT_TERMS = ("多少", "数量", "总数", "统计", "几家", "几条", "几笔")
+LIST_TERMS = ("哪些", "分别", "明细", "列表", "哪几")
 
 
 class AgentService:
-    def __init__(self, metadata_engine: Engine, data_dir: Path, role: str) -> None:
+    """Controlled natural-language access to published ontology entity instances.
+
+    The service resolves a user question to an entity declared by the published
+    ontology, then reads only its materialized instances. A model may summarize
+    that already-authorized result, but it never chooses a table or runs SQL.
+    """
+
+    def __init__(self, metadata_engine: Engine, role: str) -> None:
         self.metadata_engine = metadata_engine
-        self.data_dir = data_dir
         self.role = role
 
-    def chat(self, message: str) -> dict[str, Any]:
-        version = self._published_version()
-        tools = SemanticTools(self.data_dir, self.role, self.metadata_engine)
-        if _is_knowledge_request(message):
-            return self._answer_knowledge(message, version, tools)
-        if _is_order_count_request(message):
-            return self._answer_order_count(version, tools)
-        risks = tools.critical_supply_risks()
-        definition = json.loads(version.definition_json)
-        fallback_answer = _build_answer(risks)
-        completion = ModelProviderService(self.metadata_engine).complete_agent_answer(
-            {"risks": _evidence_for_risks(risks), "ontology_version": version.semantic_version},
-            fallback_answer,
+    def chat(self, message: str, *, context_entity_id: str | None = None) -> dict[str, Any]:
+        ontology = self._published_ontology()
+        entities = self._entities(ontology)
+        entity = self._resolve_entity(message, entities)
+        if entity is None and _is_follow_up_question(message):
+            entity = self._entity_from_context(context_entity_id, entities)
+        if entity is None:
+            return self._general_knowledge_answer(ontology, message)
+
+        entity_id = str(entity["name"])
+        entity_label = str(entity.get("label") or entity_id)
+        records = self._instances(ontology.id, entity_id)
+        operation = "count" if _is_count_request(message) else "list"
+        if not records:
+            return self._no_data_answer(ontology, entity_id, entity_label, message, operation)
+
+        payload = self._answer_with_data(
+            ontology=ontology,
+            entity=entity,
+            records=records,
+            operation=operation,
+            message=message,
         )
-        payload = {
+        self._write_audit(message, payload["tool_calls"], ontology.id)
+        return payload
+
+    @staticmethod
+    def _entity_from_context(entity_id: str | None, entities: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if not entity_id:
+            return None
+        return next((entity for entity in entities if entity.get("name") == entity_id), None)
+
+    def _published_ontology(self) -> UserOntology:
+        with Session(self.metadata_engine) as session:
+            ontology = session.scalar(
+                select(UserOntology)
+                .where(UserOntology.status == "published")
+                .order_by(UserOntology.created_at.desc())
+            )
+            if ontology is None:
+                raise ValueError("当前没有已发布本体，无法进行智能问数。")
+            session.expunge(ontology)
+            return ontology
+
+    def _instances(self, ontology_id: str, entity_id: str) -> list[OntologyEntityInstanceRecord]:
+        with Session(self.metadata_engine) as session:
+            records = session.scalars(
+                select(OntologyEntityInstanceRecord)
+                .where(OntologyEntityInstanceRecord.ontology_id == ontology_id)
+                .where(OntologyEntityInstanceRecord.entity_id == entity_id)
+                .order_by(OntologyEntityInstanceRecord.entity_key)
+            ).all()
+            for record in records:
+                session.expunge(record)
+            return records
+
+    @staticmethod
+    def _entities(ontology: UserOntology) -> list[dict[str, Any]]:
+        return [item for item in json.loads(ontology.entities_json) if isinstance(item, dict) and item.get("name")]
+
+    @staticmethod
+    def _resolve_entity(message: str, entities: list[dict[str, Any]]) -> dict[str, Any] | None:
+        normalized = message.lower().replace(" ", "")
+        matches: list[tuple[int, dict[str, Any]]] = []
+        for entity in entities:
+            entity_id = str(entity["name"])
+            label = str(entity.get("label") or "")
+            aliases = (label, entity_id.lower(), *ENTITY_ALIASES.get(entity_id, ()))
+            score = max((len(alias) for alias in aliases if alias and alias.lower() in normalized), default=0)
+            if score:
+                matches.append((score, entity))
+        return max(matches, key=lambda item: item[0])[1] if matches else None
+
+    def _answer_with_data(
+        self,
+        *,
+        ontology: UserOntology,
+        entity: dict[str, Any],
+        records: list[OntologyEntityInstanceRecord],
+        operation: str,
+        message: str,
+    ) -> dict[str, Any]:
+        entity_id = str(entity["name"])
+        entity_label = str(entity.get("label") or entity_id)
+        properties = [self._visible_properties(record, entity_id) for record in records]
+        evidence = self._instance_evidence(records, properties, operation)
+        sources = self._source_names(records)
+        updated_at = max((record.updated_at for record in records), default=datetime.now(UTC))
+        fallback = self._fallback_answer(entity_label, properties, operation)
+        completion = self._summarize(
+            message=message,
+            ontology=ontology,
+            entity=entity,
+            operation=operation,
+            count=len(records),
+            evidence=evidence,
+            fallback=fallback,
+        )
+        return {
+            "route": "ontology",
             "answer": completion.content,
-            "objects": _objects_for_risks(risks),
-            "evidence": _evidence_for_risks(risks),
+            "objects": self._objects(records, properties, entity_id, entity_label),
+            "evidence": evidence,
             "provenance": {
-                "sources": [
-                    "purchase_orders",
-                    "purchase_order_lines",
-                    "materials",
-                    "inventory",
-                    "suppliers",
-                ],
-                "updated_at": "2026-06-20T09:00:00",
-                "metric_definition": definition["metrics"][0]["definition"],
-                "ontology_version": version.semantic_version,
+                "sources": sources,
+                "updated_at": updated_at.isoformat(),
+                "metric_definition": f"已发布本体中「{entity_label}」的已映射实体实例{len(records)}条",
+                "ontology_version": self._version_label(ontology),
             },
-            "tool_calls": [
-                {"name": "evaluate_rule", "rule": "critical_material_supply_risk", "status": "success"},
-                {"name": "traverse_links", "link": "supplier_orders", "status": "success"},
-                {"name": "compute_metric", "metric": "supplier_on_time_delivery_rate", "status": "success"},
-            ],
-            "model": {"provider": completion.provider, "model_name": completion.model_name, "mode": completion.mode},
+            "tool_calls": [{"name": "query_entity_instances", "entity_id": entity_id, "operation": operation, "status": "success"}],
+            "model": self._model_payload(completion),
         }
+
+    def _no_data_answer(
+        self,
+        ontology: UserOntology,
+        entity_id: str,
+        entity_label: str,
+        message: str,
+        operation: str,
+    ) -> dict[str, Any]:
+        tool_calls = [{"name": "query_entity_instances", "entity_id": entity_id, "operation": operation, "status": "success"}]
+        payload = {
+            "route": "ontology",
+            "answer": f"当前已发布本体中的「{entity_label}」尚无已映射数据，无法基于该实体给出结论。请先在数据与管道中完成可信数据集映射与实体填充。",
+            "objects": [],
+            "evidence": [{"kind": "entity_no_data", "entity_id": entity_id, "entity_label": entity_label}],
+            "provenance": {
+                "sources": [],
+                "updated_at": datetime.now(UTC).isoformat(),
+                "metric_definition": f"「{entity_label}」实体实例数为 0",
+                "ontology_version": self._version_label(ontology),
+            },
+            "tool_calls": tool_calls,
+            "model": {"provider": "受控查询引擎", "model_name": "ontology-instance-query", "mode": "deterministic"},
+        }
+        self._write_audit(message, tool_calls, ontology.id)
+        return payload
+
+    def _general_knowledge_answer(self, ontology: UserOntology, message: str) -> dict[str, Any]:
+        model_service = ModelProviderService(self.metadata_engine)
+        profile = model_service.agent_profile()
+        if _is_model_identity_question(message):
+            completion = ModelCompletion(
+                _model_identity_message(profile),
+                profile["provider"],
+                profile["model_name"],
+                profile["mode"],
+            )
+        else:
+            try:
+                completion = model_service.complete_general_answer(message)
+            except ModelProviderUnavailable:
+                completion = ModelCompletion(
+                    "当前没有可用的已验证大模型，因此暂时无法回答通用知识问题。请先在模型管理中验证并启用 DeepSeek、GPT 或兼容模型。",
+                    profile["provider"],
+                    profile["model_name"],
+                    "deterministic",
+                )
+        payload = {
+            "route": "knowledge",
+            "answer": completion.content,
+            "objects": [],
+            "evidence": [],
+            "provenance": {
+                "sources": ["大模型通用知识"],
+                "updated_at": datetime.now(UTC).isoformat(),
+                "metric_definition": "通用知识回答不读取企业本体数据，也不提供企业数据证据。",
+                "ontology_version": self._version_label(ontology),
+            },
+            "tool_calls": [],
+            "model": self._model_payload(completion),
+        }
+        self._write_audit(message, [], ontology.id)
+        return payload
+
+    def _summarize(
+        self,
+        *,
+        message: str,
+        ontology: UserOntology,
+        entity: dict[str, Any],
+        operation: str,
+        count: int,
+        evidence: list[dict[str, Any]],
+        fallback: str,
+    ) -> ModelCompletion:
+        context = {
+            "user_question": message,
+            "ontology": ontology.name,
+            "ontology_version": self._version_label(ontology),
+            "entity": {"id": entity["name"], "label": entity.get("label")},
+            "operation": operation,
+            "count": count,
+            "evidence": evidence,
+        }
+        try:
+            return ModelProviderService(self.metadata_engine).complete_agent_answer(context, fallback)
+        except ModelProviderUnavailable:
+            return ModelCompletion(fallback, "受控查询引擎", "ontology-instance-query", "deterministic")
+
+    def _source_names(self, records: list[OntologyEntityInstanceRecord]) -> list[str]:
+        dataset_ids = sorted({record.source_dataset_id for record in records})
+        if not dataset_ids:
+            return []
+        with Session(self.metadata_engine) as session:
+            datasets = {item.id: item for item in session.scalars(select(Dataset).where(Dataset.id.in_(dataset_ids))).all()}
+            source_ids = {item.source_id for item in datasets.values()}
+            sources = {item.id: item.name for item in session.scalars(select(DataSource).where(DataSource.id.in_(source_ids))).all()}
+        return [sources.get(datasets[dataset_id].source_id, dataset_id) if dataset_id in datasets else dataset_id for dataset_id in dataset_ids]
+
+    def _visible_properties(self, record: OntologyEntityInstanceRecord, entity_id: str) -> dict[str, Any]:
+        return apply_field_policy(self.role, entity_id, json.loads(record.properties_json))
+
+    @staticmethod
+    def _instance_evidence(
+        records: list[OntologyEntityInstanceRecord], properties: list[dict[str, Any]], operation: str
+    ) -> list[dict[str, Any]]:
+        if operation == "count":
+            first = records[0]
+            return [{
+                "kind": "entity_count",
+                "entity_id": first.entity_id,
+                "count": len(records),
+                "dataset_id": first.source_dataset_id,
+                "mapping_id": first.mapping_id,
+                "pipeline_run_id": first.pipeline_run_id,
+            }]
+        return [
+            {
+                "kind": "entity_instance",
+                "entity_id": record.entity_id,
+                "entity_key": record.entity_key,
+                "properties": values,
+                "dataset_id": record.source_dataset_id,
+                "mapping_id": record.mapping_id,
+                "pipeline_run_id": record.pipeline_run_id,
+            }
+            for record, values in zip(records[:10], properties[:10], strict=True)
+        ]
+
+    @staticmethod
+    def _objects(
+        records: list[OntologyEntityInstanceRecord], properties: list[dict[str, Any]], entity_id: str, entity_label: str
+    ) -> list[dict[str, str]]:
+        return [
+            {"type": entity_id, "id": record.entity_key, "label": _object_label(values, entity_label, record.entity_key)}
+            for record, values in zip(records[:10], properties[:10], strict=True)
+        ]
+
+    @staticmethod
+    def _fallback_answer(entity_label: str, properties: list[dict[str, Any]], operation: str) -> str:
+        if operation == "count":
+            return f"当前已发布本体中已映射 {len(properties)} 条「{entity_label}」实体数据。"
+        labels = "、".join(_object_label(item, entity_label, str(index + 1)) for index, item in enumerate(properties[:10]))
+        suffix = "（仅展示前 10 条）" if len(properties) > 10 else ""
+        return f"当前已发布本体中共有 {len(properties)} 条「{entity_label}」实体数据：{labels}{suffix}。"
+
+    @staticmethod
+    def _version_label(ontology: UserOntology) -> str:
+        return f"v{ontology.version.lstrip('v')}"
+
+    @staticmethod
+    def _model_payload(completion: ModelCompletion) -> dict[str, str]:
+        return {"provider": completion.provider, "model_name": completion.model_name, "mode": completion.mode}
+
+    def _write_audit(self, message: str, tool_calls: list[dict[str, str]], ontology_id: str) -> None:
         write_audit_event(
             self.metadata_engine,
             actor=self.role,
             event_type="agent_tool_call",
-            resource_type="ontology_version",
-            payload={"message": message, "tool_calls": payload["tool_calls"]},
+            resource_type="ontology",
+            resource_id=ontology_id,
+            payload={"message": message, "tool_calls": tool_calls},
         )
-        write_audit_event(
-            self.metadata_engine,
-            actor="system",
-            event_type="model_call",
-            resource_type="model_provider",
-            payload={"provider": completion.provider, "model_name": completion.model_name, "mode": completion.mode, "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens, "status": "success"},
-        )
-        return payload
-
-    def _answer_order_count(self, version: OntologyVersion, tools: SemanticTools) -> dict[str, Any]:
-        count = tools.count_objects("PurchaseOrder")
-        payload = {
-            "answer": f"当前演示数据中共有 {count} 笔采购订单。该结果由 PurchaseOrder 对象的受控计数工具返回。",
-            "objects": [{"type": "PurchaseOrder", "id": "collection", "label": f"{count} 笔采购订单"}],
-            "evidence": [{"kind": "object_count", "object_type": "PurchaseOrder", "count": count, "source": "purchase_orders"}],
-            "provenance": {"sources": ["purchase_orders"], "updated_at": "2026-06-20T09:00:00", "metric_definition": "采购订单对象总数", "ontology_version": version.semantic_version},
-            "tool_calls": [{"name": "find_objects", "object_type": "PurchaseOrder", "operation": "count", "status": "success"}],
-            "model": {"provider": "semantic-runtime", "model_name": "ontology-count", "mode": "deterministic"},
-        }
-        write_audit_event(self.metadata_engine, actor=self.role, event_type="agent_tool_call", resource_type="ontology_version", payload={"message": "order count", "tool_calls": payload["tool_calls"]})
-        return payload
-
-    def _answer_knowledge(
-        self,
-        message: str,
-        version: OntologyVersion,
-        tools: SemanticTools,
-    ) -> dict[str, Any]:
-        documents = tools.retrieve_knowledge(message)
-        if documents:
-            answer = f"根据《{documents[0]['filename']}》：{documents[0]['snippet']}"
-        else:
-            answer = "当前已授权的文档资产中没有找到可用于回答该问题的内容。"
-        payload = {
-            "answer": answer,
-            "objects": [],
-            "evidence": [{"kind": "document", **item} for item in documents],
-            "provenance": {
-                "sources": [item["filename"] for item in documents],
-                "updated_at": "2026-06-20T09:00:00",
-                "metric_definition": "文档检索不涉及经营指标计算",
-                "ontology_version": version.semantic_version,
-            },
-            "tool_calls": [{"name": "retrieve_knowledge", "status": "success"}],
-            "model": {"provider": "Mock Provider", "model_name": "ontologyops-mock", "mode": "mock"},
-        }
-        write_audit_event(self.metadata_engine, actor=self.role, event_type="agent_tool_call", resource_type="ontology_version", payload={"message": message, "tool_calls": payload["tool_calls"]})
-        return payload
-
-    def _published_version(self) -> OntologyVersion:
-        with Session(self.metadata_engine) as session:
-            version = session.scalar(
-                select(OntologyVersion)
-                .where(OntologyVersion.status == "published")
-                .order_by(OntologyVersion.published_at.desc())
-            )
-            if version is None:
-                raise ValueError("No published ontology version is available")
-            session.expunge(version)
-            return version
 
 
-def _build_answer(risks: list[dict[str, Any]]) -> str:
-    if not risks:
-        return "当前没有发现同时满足延期、关键物料且低库存条件的供应风险。"
-    names = "、".join(sorted({str(row["supplier_name"]) for row in risks}))
-    first = risks[0]
-    return (
-        f"发现 {names} 存在关键物料供应风险：订单 {first['order_number']} 已超过应交日期，"
-        f"关联物料 {first['material_name']} 当前库存 {first['quantity_on_hand']}，"
-        f"低于安全库存 {first['safety_stock']}。建议业务人员优先核实交期并准备替代供货方案。"
-    )
+def _object_label(properties: dict[str, Any], entity_label: str, fallback: str) -> str:
+    for key in ("name", "order_id", "sales_order_no", "code", "supplier_id", "product_id", "material_id"):
+        value = properties.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return f"{entity_label} {fallback}"
 
 
-def _is_knowledge_request(message: str) -> bool:
-    return any(token in message for token in ("规范", "标准", "制度", "文档", "要求"))
+def _is_model_identity_question(message: str) -> bool:
+    normalized = message.replace(" ", "")
+    return any(token in normalized for token in ("哪个模型", "什么模型", "你是谁", "模型身份"))
 
 
-def _is_order_count_request(message: str) -> bool:
-    return "订单" in message and any(token in message for token in ("多少", "数量", "几笔", "总数"))
+def _is_count_request(message: str) -> bool:
+    return not any(term in message for term in LIST_TERMS) and any(term in message for term in COUNT_TERMS)
 
 
-def _objects_for_risks(risks: list[dict[str, Any]]) -> list[dict[str, str]]:
-    objects: list[dict[str, str]] = []
-    for row in risks:
-        objects.extend(
-            [
-                {"type": "Supplier", "id": str(row["supplier_id"]), "label": str(row["supplier_name"])},
-                {"type": "PurchaseOrder", "id": str(row["purchase_order_id"]), "label": str(row["order_number"])},
-                {"type": "Material", "id": str(row["material_id"]), "label": str(row["material_name"])},
-            ]
-        )
-    return objects
+def _is_follow_up_question(message: str) -> bool:
+    normalized = message.replace(" ", "")
+    return any(term in normalized for term in ("分别", "哪些", "明细", "列表", "哪几", "它们", "这些", "这几"))
 
 
-def _evidence_for_risks(risks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "kind": "critical_supply_risk",
-            "supplier": row["supplier_name"],
-            "order_number": row["order_number"],
-            "material": row["material_name"],
-            "quantity_on_hand": row["quantity_on_hand"],
-            "safety_stock": row["safety_stock"],
-            "promised_at": str(row["promised_at"]),
-        }
-        for row in risks
-    ]
+def _model_identity_message(profile: dict[str, str]) -> str:
+    if profile["mode"] == "real":
+        return f"当前智能助手配置使用 {profile['provider']} 的 {profile['model_name']}。企业数据问题会先经过本体受控查询，再由该模型组织回答；通用问题不读取企业本体数据。"
+    return "当前智能助手未启用已验证的真实大模型。本体数据问题仍可返回受控查询结果；通用知识回答需要先在模型管理中验证并启用模型。"

@@ -7,6 +7,7 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy import inspect, text
 
 from app.models.platform import Base
+from app.models import resources as resource_models
 
 
 def create_engine_and_schema(path: Path) -> Engine:
@@ -24,23 +25,43 @@ def runtime_metadata_engine() -> Engine:
 
 def _migrate_sqlite_schema(engine: Engine) -> None:
     inspector = inspect(engine)
-    if "model_provider_configs" not in inspector.get_table_names():
-        return
-    existing = {column["name"] for column in inspector.get_columns("model_provider_configs")}
-    additions = {
-        "base_url": "VARCHAR(512)",
-        "api_key_env": "VARCHAR(128)",
-        "temperature": "VARCHAR(16) NOT NULL DEFAULT '0'",
-        "max_tokens": "INTEGER NOT NULL DEFAULT 1024",
-        "agent_enabled": "VARCHAR(8) NOT NULL DEFAULT 'true'",
+    table_names = set(inspector.get_table_names())
+    if "model_provider_configs" in table_names:
+        existing = {column["name"] for column in inspector.get_columns("model_provider_configs")}
+        additions = {
+            "base_url": "VARCHAR(512)",
+            "api_key_env": "VARCHAR(128)",
+            "temperature": "VARCHAR(16) NOT NULL DEFAULT '0'",
+            "max_tokens": "INTEGER NOT NULL DEFAULT 1024",
+            "agent_enabled": "VARCHAR(8) NOT NULL DEFAULT 'true'",
         "modeling_enabled": "VARCHAR(8) NOT NULL DEFAULT 'true'",
-    }
-    with engine.begin() as connection:
-        for name, definition in additions.items():
-            if name not in existing:
-                connection.execute(text(f"ALTER TABLE model_provider_configs ADD COLUMN {name} {definition}"))
-    if "quality_rules" in inspector.get_table_names():
+        "verification_status": "VARCHAR(16) NOT NULL DEFAULT 'unconfigured'",
+        "last_verified_at": "DATETIME",
+        "last_error": "VARCHAR(255)",
+        }
+        with engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE model_provider_configs ADD COLUMN {name} {definition}"))
+    if "quality_rules" in table_names:
         quality_columns = {column["name"] for column in inspector.get_columns("quality_rules")}
         if "config_json" not in quality_columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE quality_rules ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'"))
+    if "user_ontologies" in table_names:
+        ontology_columns = {column["name"] for column in inspector.get_columns("user_ontologies")}
+        if "draft_id" not in ontology_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE user_ontologies ADD COLUMN draft_id VARCHAR(36)"))
+    if "audit_events" in table_names:
+        audit_columns = {column["name"] for column in inspector.get_columns("audit_events")}
+        additions = {
+            "resource_id": "VARCHAR(36)",
+            "correlation_id": "VARCHAR(36)",
+            "outcome": "VARCHAR(32)",
+            "previous_hash": "VARCHAR(128)",
+        }
+        with engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in audit_columns:
+                    connection.execute(text(f"ALTER TABLE audit_events ADD COLUMN {name} {definition}"))

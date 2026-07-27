@@ -14,7 +14,7 @@ def test_operator_cannot_change_model_or_publish_ontology(tmp_path, monkeypatch)
         headers={"X-Demo-Role": "operator"},
         json={"enabled": True, "is_default": True},
     )
-    denied_publish = client.post("/api/ontology/publish", headers={"X-Demo-Role": "operator"})
+    denied_publish = client.post("/api/ontology-drafts/missing/publish", headers={"X-Demo-Role": "operator"})
 
     assert denied_model.status_code == 403
     assert denied_publish.status_code == 403
