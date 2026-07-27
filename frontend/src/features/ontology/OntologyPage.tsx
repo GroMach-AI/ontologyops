@@ -88,11 +88,14 @@ function normalizeLLMAnalysis(value: unknown, fallback?: LLMAnalysis): LLMAnalys
 
   const relationships = rawRelationships.map((item, relationshipIndex) => {
     const relationship = asRecord(item);
+    const rawType = asString(relationship.type, "many_to_one");
+    const validType = ["one_to_one", "one_to_many", "many_to_one", "many_to_many"].includes(rawType)
+      ? rawType : "many_to_one";
     return {
       name: asString(relationship.name, `关系 ${relationshipIndex + 1}`),
       from_entity: asString(relationship.from_entity),
       to_entity: asString(relationship.to_entity),
-      type: asString(relationship.type, "many_to_one"),
+      type: validType,
       description: asString(relationship.description),
       based_on: asString(relationship.based_on),
     };
@@ -305,7 +308,7 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
     if (qIndex > 0) setQIndex(qIndex - 1);
   }
 
-  async function onCreateSubmit() {
+  function onCreateSubmit() {
     const name = formName.trim();
     const scope = formScope.trim();
     if (!name || !scope) return;
@@ -321,13 +324,6 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
       entities,
       relationships,
     };
-    try {
-      await fetch("/api/ontology-drafts/list", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(onto),
-      });
-    } catch { /* ignore save error */ }
     onCreated?.(onto);
     closeCreate();
     navigate(`/ontology/${id}`);
@@ -682,18 +678,23 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
                         </div>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 600, marginBottom: 4 }}>{e.label} ({e.name})</div>
-                          <div style={{ color: "oklch(0.48 0.018 155)", marginBottom: 6 }}>{e.description}</div>
-                          <div style={{ color: "oklch(0.63 0.015 155)", fontSize: 11 }}>来源：{e.source_file}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ minWidth: 24, color: "oklch(0.45 0.115 160)", fontWeight: 700, fontSize: 11 }}>{ei + 1}.</span>
+                            <strong style={{ fontWeight: 600 }}>{e.label} ({e.name})</strong>
+                          </div>
+                          <div style={{ color: "oklch(0.48 0.018 155)", marginBottom: 6, paddingLeft: 30 }}>{e.description}</div>
+                          <div style={{ color: "oklch(0.63 0.015 155)", fontSize: 11, paddingLeft: 30 }}>来源：{e.source_file || "未指定"}</div>
                           {e.properties.length > 0 ? (
-                            <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            <div style={{ marginTop: 6, paddingLeft: 30, display: "flex", flexWrap: "wrap", gap: 4 }}>
                               {e.properties.map((p) => (
                                 <span key={p.name} style={{ padding: "2px 6px", background: "oklch(0.94 0.04 160)", borderRadius: 3, fontSize: 11 }}>
                                   {p.is_key ? "🔑 " : ""}{p.name} : {p.type}
                                 </span>
                               ))}
                             </div>
-                          ) : null}
+                          ) : (
+                            <div style={{ color: "oklch(0.58 0.16 28)", fontSize: 11, paddingLeft: 30, marginTop: 6, fontStyle: "italic" }}>该实体未提取出属性</div>
+                          )}
                         </>
                       )}
                     </div>
@@ -711,20 +712,27 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
                       <div style={{ fontSize: 12, fontWeight: 700, marginTop: 12, marginBottom: 6, color: "oklch(0.45 0.115 160)" }}>
                         <i className="ph ph-link" style={{ marginRight: 5 }}></i>{llm.relationships.length} 个关系
                       </div>
-                      {llm.relationships.map((r, i) => (
+                      {llm.relationships.map((r, i) => {
+                        const fromLabel = llm.entities.find((e) => e.name === r.from_entity)?.label || r.from_entity;
+                        const toLabel = llm.entities.find((e) => e.name === r.to_entity)?.label || r.to_entity;
+                        const hasFromTo = r.from_entity && r.to_entity;
+                        return (
                         <div key={i} style={{ padding: "6px 10px", borderLeft: "3px solid oklch(0.53 0.13 160)", marginBottom: 6, fontSize: 12, color: "oklch(0.48 0.018 155)", lineHeight: 1.5, background: "#fff", display: "grid", gap: editing ? 6 : 0 }}>
                           {editing ? (
                             <>
                               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <select value={r.from_entity} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12, maxWidth: 120 }} onChange={(ev) => {
+                                <span style={{ minWidth: 24, color: "oklch(0.45 0.115 160)", fontWeight: 700, fontSize: 11 }}>{i + 1}.</span>
+                                <select value={r.from_entity || ""} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12, maxWidth: 120 }} onChange={(ev) => {
                                   const next = [...llm.relationships]; next[i] = { ...next[i], from_entity: ev.target.value }; setLlm({ ...llm, relationships: next });
                                 }}>
+                                  <option value="">— 未指定 —</option>
                                   {llm.entities.map((e) => <option key={e.name} value={e.name}>{e.label || e.name}</option>)}
                                 </select>
                                 <span style={{ color: "oklch(0.63 0.015 155)" }}>→</span>
-                                <select value={r.to_entity} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12, maxWidth: 120 }} onChange={(ev) => {
+                                <select value={r.to_entity || ""} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12, maxWidth: 120 }} onChange={(ev) => {
                                   const next = [...llm.relationships]; next[i] = { ...next[i], to_entity: ev.target.value }; setLlm({ ...llm, relationships: next });
                                 }}>
+                                  <option value="">— 未指定 —</option>
                                   {llm.entities.map((e) => <option key={e.name} value={e.name}>{e.label || e.name}</option>)}
                                 </select>
                                 <select value={r.type} style={{ padding: "3px 6px", border: "1px solid oklch(0.82 0.014 155)", borderRadius: 4, fontSize: 12 }} onChange={(ev) => {
@@ -746,15 +754,30 @@ export function OntologyPage({ role, ontologies, onCreated }: { role: DemoRole; 
                             </>
                           ) : (
                             <>
-                              <strong>{r.name}</strong>: {r.from_entity} → {r.to_entity} ({r.type === "one_to_many" ? "一对多" : r.type === "many_to_one" ? "多对一" : r.type === "many_to_many" ? "多对多" : r.type})
-                              <div style={{ color: "oklch(0.63 0.015 155)", fontSize: 11, marginTop: 2 }}>{r.description}</div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <span style={{ minWidth: 24, color: "oklch(0.45 0.115 160)", fontWeight: 700, fontSize: 11 }}>{i + 1}.</span>
+                                <strong style={{ color: "oklch(0.23 0.018 155)" }}>{r.name || `关系 ${i + 1}`}</strong>
+                                <span style={{ color: "oklch(0.63 0.015 155)" }}>·</span>
+                                <span>{r.type === "one_to_many" ? "一对多" : r.type === "many_to_one" ? "多对一" : r.type === "many_to_many" ? "多对多" : r.type === "one_to_one" ? "一对一" : "未指定基数"}</span>
+                              </div>
+                              <div style={{ color: "oklch(0.48 0.018 155)", paddingLeft: 30, marginTop: 2 }}>
+                                {hasFromTo ? (
+                                  <><span>{fromLabel}</span><span style={{ margin: "0 6px", color: "oklch(0.45 0.115 160)" }}>→</span><span>{toLabel}</span></>
+                                ) : (
+                                  <span style={{ color: "oklch(0.58 0.16 28)", fontStyle: "italic" }}>from/to 未指定，需手动选择实体</span>
+                                )}
+                              </div>
+                              {r.description ? (
+                                <div style={{ color: "oklch(0.63 0.015 155)", fontSize: 11, paddingLeft: 30, marginTop: 2 }}>{r.description}</div>
+                              ) : null}
                             </>
                           )}
                         </div>
-                      ))}
+                        );
+                      })}
                       {editing ? (
                         <button type="button" className="oo-secondary-button" style={{ width: "100%", padding: "6px", fontSize: 12 }} onClick={() => {
-                          setLlm({ ...llm, relationships: [...llm.relationships, { name: "", from_entity: llm.entities[0]?.name ?? "", to_entity: llm.entities[0]?.name ?? "", type: "many_to_one", description: "", based_on: "" }] });
+                          setLlm({ ...llm, relationships: [...llm.relationships, { name: "", from_entity: "", to_entity: "", type: "many_to_one", description: "", based_on: "" }] });
                         }}>
                           <i className="ph ph-plus"></i> 添加关系
                         </button>
